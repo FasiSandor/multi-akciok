@@ -243,29 +243,87 @@ function OfferDetail({ offer, allOffers, onBack }: { offer: Offer; allOffers: Of
 }
 
 function ListView({ offers, listIds, setListIds }: { offers: Offer[]; listIds: string[]; setListIds: (v: string[])=>void }) {
+  const [oneStore,setOneStore]=useState(false);
+  const [addOpen,setAddOpen]=useState(false);
+  const [addQuery,setAddQuery]=useState('');
+
   const selected = listIds.map(id=>offers.find(o=>o.id===id)).filter(Boolean) as Offer[];
-  const sum = selected.reduce((a,b)=>a+b.price,0);
-  const storeTotals = storeOrder
-    .map(store=>({store,total:selected.filter(o=>o.store===store).reduce((a,b)=>a+b.price,0),count:selected.filter(o=>o.store===store).length}))
-    .filter(x=>x.count>0)
-    .sort((a,b)=>a.total-b.total);
+
+  function norm(value:string){
+    return value.toLocaleLowerCase('hu').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+  }
+  function tokens(value:string){
+    return norm(value).split(' ').filter(x=>x.length>=4 && !['friss','akcios','termek','felnott','gyerek','ferfi'].includes(x));
+  }
+  function similarity(a:Offer,b:Offer){
+    if(a.category!==b.category) return 0;
+    const ta=tokens(a.name),tb=tokens(b.name);
+    if(!ta.length||!tb.length) return 0;
+    const overlap=ta.filter(x=>tb.some(y=>y===x||y.includes(x)||x.includes(y))).length;
+    return overlap/Math.max(ta.length,tb.length);
+  }
+  function alternatives(item:Offer,store?:StoreId){
+    return offers
+      .filter(o=>(!store||o.store===store) && (o.id===item.id || similarity(item,o)>=0.5))
+      .sort((a,b)=>a.price-b.price);
+  }
+
+  const originalTotal=selected.reduce((a,b)=>a+b.price,0);
+  const mixedPicks=selected.map(item=>alternatives(item)[0]??item);
+  const mixedTotal=mixedPicks.reduce((a,b)=>a+b.price,0);
+
+  const oneStoreOptions=storeOrder.map(store=>{
+    const picks=selected.map(item=>alternatives(item,store)[0]).filter(Boolean) as Offer[];
+    return {store,picks,total:picks.reduce((a,b)=>a+b.price,0),complete:picks.length===selected.length};
+  }).filter(x=>x.complete).sort((a,b)=>a.total-b.total);
+  const bestOneStore=oneStoreOptions[0];
+
+  const plan=oneStore?(bestOneStore?.picks??[]):mixedPicks;
+  const planTotal=oneStore?(bestOneStore?.total??0):mixedTotal;
+  const saving=Math.max(0,originalTotal-planTotal);
+  const planTotals=storeOrder.map(store=>({
+    store,
+    total:plan.filter(o=>o.store===store).reduce((a,b)=>a+b.price,0),
+    count:plan.filter(o=>o.store===store).length
+  })).filter(x=>x.count>0);
+
+  const q=norm(addQuery);
+  const addResults=offers.filter(o=>!listIds.includes(o.id) && (!q||norm(o.name+' '+o.category+' '+stores[o.store].name).includes(q))).slice(0,8);
+
   return (
     <div className="screen list-screen">
-      <div className="title-with-plus"><div><ListChecks/><h1>Bevásárlólista</h1></div><button className="round-plus"><Plus/></button></div>
-      <label className="toggle-row"><span className="toggle on"><i/></span> Csak egy üzletbe megyek <span className="info-dot">i</span></label>
+      <div className="title-with-plus"><div><ListChecks/><h1>Bevásárlólista</h1></div><button className="round-plus" onClick={()=>setAddOpen(v=>!v)}><Plus/></button></div>
+      <button className="toggle-row button-toggle" onClick={()=>setOneStore(v=>!v)}><span className={'toggle '+(oneStore?'on':'')}><i/></span> Csak egy üzletbe megyek <span className="info-dot">i</span></button>
+
+      {addOpen&&<div className="list-add-panel">
+        <div className="searchbox"><Search size={18}/><input autoFocus value={addQuery} onChange={e=>setAddQuery(e.target.value)} placeholder="Mit szeretnél venni?"/></div>
+        <div className="list-add-results">{addResults.map(o=><button key={o.id} onClick={()=>{setListIds([...listIds,o.id]);setAddQuery('')}}><div className="mini-food"><Image src={o.image} alt="" fill sizes="44px"/></div><div><b>{o.name}</b><small>{stores[o.store].name} · {o.unitLabel}</small></div><strong>{money(o.price)}</strong><Plus size={16}/></button>)}</div>
+      </div>}
+
       <div className="list-layout">
         <div className="shopping-items">
-          {offers.slice(0,8).map(o=>{const checked=listIds.includes(o.id); return <label className="shopping-item" key={o.id}>
-            <input type="checkbox" checked={checked} onChange={()=>setListIds(checked?listIds.filter(x=>x!==o.id):[...listIds,o.id])}/><div className="mini-food"><Image src={o.image} alt="" fill sizes="44px"/></div><div><strong>{o.name}</strong><small>{o.unitLabel}</small></div><div className="item-price"><b>{money(o.price)}</b><StoreBadge store={o.store} compact/></div><span className="drag">≡</span>
-          </label>})}
-          <button className="add-product"><Plus size={18}/> Termék hozzáadása</button>
+          {selected.length===0&&<div className="list-empty"><ShoppingCart size={28}/><b>A listád még üres</b><small>Adj hozzá aktuális ajánlatot a + gombbal.</small></div>}
+          {selected.map(o=>{const best=alternatives(o)[0]; const cheaper=best&&best.price<o.price?best:null; return <div className="shopping-item selected-item" key={o.id}>
+            <button className="remove-list-item" onClick={()=>setListIds(listIds.filter(x=>x!==o.id))}><X size={14}/></button><div className="mini-food"><Image src={o.image} alt="" fill sizes="44px"/></div><div><strong>{o.name}</strong><small>{o.unitLabel}{cheaper?' · máshol '+money(cheaper.price):''}</small></div><div className="item-price"><b>{money(o.price)}</b><StoreBadge store={o.store} compact/></div><span className="drag">≡</span>
+          </div>})}
+          <button className="add-product" onClick={()=>setAddOpen(v=>!v)}><Plus size={18}/> Termék hozzáadása</button>
         </div>
+
         <div className="optimizer-card">
-          <span className="trophy">🧾</span><small>Kiválasztott akciók összege</small><strong>{money(sum)}</strong><p>{selected.length} termék</p>
-          <hr/><b>Boltonként</b>{storeTotals.slice(0,5).map(x=><div className="store-total" key={x.store}><StoreBadge store={x.store} compact/><span>{x.count} db · {money(x.total)}</span></div>)}
+          <span className="trophy">{oneStore?'🏪':'✨'}</span>
+          <small>{oneStore?'Legjobb egyboltos kosár':'Legolcsóbb kombináció'}</small>
+          <strong>{selected.length&&plan.length?money(planTotal):'—'}</strong>
+          <p>{selected.length?selected.length+' tétel · aktuális ajánlatok alapján':'Adj hozzá termékeket'}</p>
+          {saving>0&&<div className="optimizer-saving">−{money(saving)}</div>}
+          <hr/>
+          {oneStore&&!bestOneStore&&selected.length>0?<p className="optimizer-warning">A jelenlegi akciós adatok alapján nincs olyan üzlet, ahol minden kiválasztott tételhez találtunk megfelelő ajánlatot.</p>:<>
+            <b>{oneStore?'Egy üzlet':'Boltonként'}</b>
+            {planTotals.map(x=><div className="store-total" key={x.store}><StoreBadge store={x.store} compact/><span>{x.count} db · {money(x.total)}</span></div>)}
+          </>}
         </div>
       </div>
-      <button className="primary wide" disabled={!selected.length}><Sparkles size={18}/> Lista összehasonlítása</button>
+
+      <button className="primary wide" disabled={!selected.length||!plan.length}><Sparkles size={18}/> {oneStore?'Legjobb egy üzlet':'Lista optimalizálva'}</button>
     </div>
   );
 }

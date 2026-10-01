@@ -7,7 +7,7 @@ import {
   BarChart3, Plus, Camera, X, Sparkles, MapPin, ScanLine, Trash2, CheckCircle2, RefreshCw,
   Tag, ShoppingCart, SlidersHorizontal, WalletCards, ExternalLink, ImagePlus
 } from 'lucide-react';
-import type { CustomRetailer, LoyaltyCard, Offer, StoreId } from '@/lib/types';
+import type { Campaign, CustomRetailer, LoyaltyCard, Offer, StoreId } from '@/lib/types';
 import { fallbackOffers } from '@/lib/fallback-offers';
 import { knownStoreOrder, stores } from '@/lib/stores';
 import { CodeDisplay } from '@/components/CodeDisplay';
@@ -61,6 +61,7 @@ export default function Page() {
   const [retailerModal, setRetailerModal] = useState(false);
   const [watchTerms, setWatchTerms] = useState<string[]>([]);
   const [watchHits, setWatchHits] = useState<WatchHit[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
 
   useEffect(() => {
     const savedCards = localStorage.getItem('multi-akciok-cards');
@@ -100,6 +101,7 @@ export default function Page() {
         const data = await res.json();
         if (Array.isArray(data.offers)) { setOffers(data.offers); recordOfferHistory(data.offers); setWatchHits(evaluateWatchTerms(data.offers, termsOverride ?? watchTerms)); }
         if (Array.isArray(data.sourceStates)) setSourceStates(data.sourceStates);
+        if (Array.isArray(data.campaigns)) setCampaigns(data.campaigns);
         setLastRefresh(data.refreshedAt || new Date().toISOString());
       }
     } catch {
@@ -121,7 +123,7 @@ export default function Page() {
         {selected ? (
           <OfferDetail offer={selected} allOffers={offers} onBack={() => setSelected(null)} />
         ) : tab === 'home' ? (
-          <HomeView offers={filtered} query={query} setQuery={setQuery} onSelect={setSelected} setTab={setTab} refresh={() => refreshOffers()} refreshing={refreshing} lastRefresh={lastRefresh} customRetailers={customRetailers} watchHits={watchHits} onAddRetailer={() => setRetailerModal(true)} />
+          <HomeView offers={filtered} campaigns={campaigns} query={query} setQuery={setQuery} onSelect={setSelected} setTab={setTab} refresh={() => refreshOffers()} refreshing={refreshing} lastRefresh={lastRefresh} customRetailers={customRetailers} watchHits={watchHits} onAddRetailer={() => setRetailerModal(true)} />
         ) : tab === 'search' ? (
           <SearchView offers={filtered} query={query} setQuery={setQuery} onSelect={setSelected} />
         ) : tab === 'list' ? (
@@ -153,8 +155,8 @@ function BrandHeader({ onBell }: { onBell?: () => void }) {
   );
 }
 
-function HomeView({ offers, query, setQuery, onSelect, setTab, refresh, refreshing, lastRefresh, customRetailers, watchHits, onAddRetailer }: {
-  offers: Offer[]; query: string; setQuery: (s: string) => void; onSelect: (o: Offer) => void; setTab: (t: Tab) => void;
+function HomeView({ offers, campaigns, query, setQuery, onSelect, setTab, refresh, refreshing, lastRefresh, customRetailers, watchHits, onAddRetailer }: {
+  offers: Offer[]; campaigns: Campaign[]; query: string; setQuery: (s: string) => void; onSelect: (o: Offer) => void; setTab: (t: Tab) => void;
   refresh: () => void; refreshing: boolean; lastRefresh: string; customRetailers: CustomRetailer[]; watchHits: WatchHit[]; onAddRetailer: () => void;
 }) {
   const top = offers.slice(0, 3);
@@ -180,6 +182,15 @@ function HomeView({ offers, query, setQuery, onSelect, setTab, refresh, refreshi
         <div><span>FRISS</span><strong>Élelmiszer, otthon, sport és barkács akciók egy helyen</strong><button onClick={() => setTab('search')}>Megnézem <ChevronRight size={15}/></button></div>
         <div className="banner-food">🛒🏠🏃</div>
       </div>
+      {campaigns.length>0&&<>
+        <div className="section-title"><h2>Kuponok és kampányok</h2></div>
+        <div className="campaign-row">{campaigns.slice(0,4).map(campaign=><a className="campaign-card" key={campaign.id} href={campaign.sourceUrl} target="_blank" rel="noreferrer">
+          <div className="campaign-top"><StoreBadge store={campaign.store} compact/>{campaign.discountText&&<span>{campaign.discountText}</span>}</div>
+          <strong>{campaign.title}</strong>
+          {campaign.subtitle&&<small>{campaign.subtitle}</small>}
+          <div className="campaign-foot">{campaign.code&&<b>Kód: {campaign.code}</b>}{campaign.validTo&&<span>{new Date(campaign.validTo).toLocaleDateString('hu-HU',{month:'short',day:'numeric'})}-ig</span>}</div>
+        </a>)}</div>
+      </>}
       <div className="section-title"><h2>Kategóriák</h2><button onClick={() => setTab('search')}>Összes <ChevronRight size={16}/></button></div>
       <div className="category-row">{categories.map(([e, n]) => <button key={n} onClick={() => { setQuery(n === 'Minden akció' ? '' : n); setTab('search'); }}><span>{e}</span><small>{n}</small></button>)}</div>
       <div className="daily-status">

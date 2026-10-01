@@ -71,6 +71,29 @@ function placeholder(store: StoreId, name: string) {
   return `https://placehold.co/640x480/${colors[store] ?? 'e8edf3'}/ffffff?text=${label}`;
 }
 
+
+function imageNear(html: string, name: string, base: string, fallback: string) {
+  const lower = html.toLocaleLowerCase('hu');
+  const needle = name.toLocaleLowerCase('hu');
+  const center = lower.indexOf(needle);
+  if (center < 0) return fallback;
+  const start = Math.max(0, center - 6000);
+  const end = Math.min(html.length, center + 6000);
+  const chunk = html.slice(start, end);
+  const candidates: Array<{url:string;distance:number}> = [];
+  const re = /(?:src|data-src|data-original)=["']([^"']+)["']/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(chunk))) {
+    const raw = match[1].split(/\s+/)[0];
+    const url = absoluteUrl(raw, base);
+    if (!url || /logo|icon|sprite|placeholder|data:/i.test(url)) continue;
+    if (!/\.(?:jpe?g|png|webp|avif)(?:[?#]|$)/i.test(url) && !/image|cdn|asset|media/i.test(url)) continue;
+    candidates.push({url,distance:Math.abs((start + (match.index ?? 0)) - center)});
+  }
+  candidates.sort((a,b)=>a.distance-b.distance);
+  return candidates[0]?.url ?? fallback;
+}
+
 async function fetchHtml(url: string) {
   const response = await fetch(url, {
     headers: {
@@ -144,7 +167,7 @@ async function scrapePenny(source: RetailSource): Promise<Offer[]> {
       validFrom,
       validTo,
       loyaltyOnly: true,
-      image: placeholder('penny', name),
+      image: imageNear(html, name, url, placeholder('penny', name)),
       sourceUrl: url
     });
   }
@@ -180,7 +203,7 @@ async function scrapeDeichmann(source: RetailSource): Promise<Offer[]> {
       unitLabel: '1 pár',
       validFrom: isoToday(),
       validTo: isoFuture(14),
-      image: placeholder('deichmann', name),
+      image: imageNear(html, name, url, placeholder('deichmann', name)),
       sourceUrl: url
     });
   }
@@ -231,7 +254,7 @@ function parseAuchanPage(html: string, url: string) {
       unitPrice,
       validFrom: isoToday(),
       validTo: isoFuture(7),
-      image: placeholder('auchan', name),
+      image: imageNear(html, name, url, placeholder('auchan', name)),
       sourceUrl: url
     });
   }
@@ -308,7 +331,7 @@ function parseLidlPage(html: string, url: string) {
       validFrom: range?.start ?? isoToday(),
       validTo: range?.end ?? isoFuture(7),
       loyaltyOnly: true,
-      image: placeholder('lidl', name),
+      image: imageNear(html, name, url, placeholder('lidl', name)),
       sourceUrl: url
     });
   }
@@ -371,7 +394,7 @@ async function scrapeTesco(source: RetailSource): Promise<Offer[]> {
       validFrom: isoToday(),
       validTo,
       loyaltyOnly,
-      image: placeholder('tesco', name),
+      image: imageNear(html, name, url, placeholder('tesco', name)),
       sourceUrl: url
     });
   }

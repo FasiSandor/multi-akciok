@@ -528,29 +528,54 @@ async function scrapeRossmann(source:RetailSource):Promise<Offer[]>{
 function parsePraktikerPage(html:string,url:string):Offer[]{
   const data=lines(html);
   const offers:Offer[]=[];
+
   for(let i=0;i<data.length-2;i++){
     if(!/^\d{6}$/.test(data[i+1])) continue;
     const name=data[i].trim();
     if(name.length<3||name.length>190||/Kosárba|Szállítás|Készleten|Rendezés|termék$/i.test(name)) continue;
-    const after=data.slice(i+2,i+10);
-    const priceLine=after.find(x=>/^\s*[\d.]+\s*Ft\s*\/\s*(darab|m2|m²|csomag|tekercs|l|kg)\b/i.test(x));
-    if(!priceLine) continue;
-    const pm=priceLine.match(/^\s*([\d.]+)\s*Ft\s*\/\s*(darab|m2|m²|csomag|tekercs|l|kg)\b/i);
-    if(!pm) continue;
-    const price=number(pm[1]);
-    if(!price||price>1_500_000) continue;
-    const unit=pm[2].toLowerCase();
-    const unitLabel=unit==='darab'?'1 db':unit==='m2'||unit==='m²'?'1 m²':'1 '+unit;
+
+    const block=data.slice(i+2,Math.min(data.length,i+14));
+    const basketIndex=block.findIndex(x=>/Kosárba/i.test(x));
+    const priceArea=(basketIndex>=0?block.slice(0,basketIndex):block).filter(x=>/^[\d.]+\s*Ft\s*\/\s*(darab|m2|m²|csomag|tekercs|l|kg|pár|garnitúra)\b/i.test(x));
+    if(!priceArea.length) continue;
+
+    const parsed=priceArea.map(line=>{
+      const m=line.match(/^([\d.]+)\s*Ft\s*\/\s*(darab|m2|m²|csomag|tekercs|l|kg|pár|garnitúra)\b/i);
+      return m?{value:number(m[1]),unit:m[2].toLowerCase()}:null;
+    }).filter((x):x is {value:number;unit:string}=>!!x&&x.value>0&&x.value<=1_500_000);
+    if(!parsed.length) continue;
+
+    const sellingUnits=['darab','csomag','tekercs','pár','garnitúra'];
+    const primaryCandidates=parsed.filter(x=>sellingUnits.includes(x.unit));
+    let primary=primaryCandidates[primaryCandidates.length-1] ?? parsed[parsed.length-1];
+    let oldPrice: number|undefined;
+
+    if(primaryCandidates.length>=2){
+      const sameUnit=primaryCandidates.filter(x=>x.unit===primary.unit);
+      if(sameUnit.length>=2){
+        primary=sameUnit[sameUnit.length-1];
+        const previous=sameUnit.slice(0,-1).map(x=>x.value).filter(v=>v>primary.value);
+        oldPrice=previous.length?Math.max(...previous):undefined;
+      }
+    }
+
+    const unitEntry=parsed.find(x=>x.unit!==primary.unit) ?? (primary.unit==='m2'||primary.unit==='m²'||primary.unit==='kg'||primary.unit==='l'?primary:undefined);
+    const unitLabel=primary.unit==='darab'?'1 db':primary.unit==='m2'||primary.unit==='m²'?'1 m²':'1 '+primary.unit;
+    const unitPriceLabel=unitEntry?'/'+(unitEntry.unit==='darab'?'db':unitEntry.unit):undefined;
+
     offers.push({
-      id:'praktiker-'+slug(name)+'-'+price,
+      id:'praktiker-'+slug(name)+'-'+primary.value,
       name,
       category:categoryFor(name),
       store:'praktiker',
-      price,
+      price:primary.value,
+      oldPrice,
       unitLabel,
-      unitPrice:price,
+      unitPrice:unitEntry?.value,
+      unitPriceLabel,
       validFrom:isoToday(),
-      validTo:isoFuture(30),
+      validTo:isoToday(),
+      validityText:'Ma ellenőrizve',
       image:imageNear(html,name,url,placeholder('praktiker',name)),
       sourceUrl:url
     });

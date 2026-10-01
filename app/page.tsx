@@ -297,16 +297,37 @@ function AddCardModal({ onClose, onSave }: { onClose:()=>void; onSave:(c:Loyalty
     setMessage('Kód keresése…');
     try {
       const Detector=window.BarcodeDetector;
-      if (!Detector) throw new Error('A böngésző nem támogatja az automatikus kódfelismerést.');
-      const bitmap=await createImageBitmap(file);
-      const detector=new Detector({formats:['qr_code','code_128','ean_13','ean_8','upc_a','data_matrix']});
-      const found=await detector.detect(bitmap);
-      bitmap.close();
-      if (!found.length) throw new Error('Nem találtam olvasható kódot a képen.');
-      setCode(found[0].rawValue);
-      setFormat(found[0].format==='qr_code'?'qr':'barcode');
-      setMessage('Kód sikeresen beolvasva.');
-    } catch(e) { setMessage(e instanceof Error?e.message:'Nem sikerült a beolvasás.'); }
+      if (Detector) {
+        try {
+          const bitmap=await createImageBitmap(file);
+          const detector=new Detector({formats:['qr_code','code_128','ean_13','ean_8','upc_a','data_matrix']});
+          const found=await detector.detect(bitmap);
+          bitmap.close();
+          if (found.length) {
+            setCode(found[0].rawValue);
+            setFormat(found[0].format==='qr_code'?'qr':'barcode');
+            setMessage('Kód sikeresen beolvasva.');
+            return;
+          }
+        } catch {
+          // ZXing fallback follows below.
+        }
+      }
+
+      const { BrowserMultiFormatReader } = await import('@zxing/browser');
+      const reader = new BrowserMultiFormatReader();
+      const url = URL.createObjectURL(file);
+      try {
+        const result = await reader.decodeFromImageUrl(url);
+        setCode(result.getText());
+        setFormat(String(result.getBarcodeFormat()).toUpperCase().includes('QR')?'qr':'barcode');
+        setMessage('Kód sikeresen beolvasva.');
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      setMessage('Nem találtam olvasható QR- vagy vonalkódot a képen.');
+    }
   }
 
   async function startCamera() {
@@ -320,12 +341,34 @@ function AddCardModal({ onClose, onSave }: { onClose:()=>void; onSave:(c:Loyalty
     try {
       if (!videoRef.current) return;
       const Detector=window.BarcodeDetector;
-      if(!Detector) throw new Error('Ezen a böngészőn a kamerás kódfelismerés nem támogatott.');
-      const detector=new Detector({formats:['qr_code','code_128','ean_13','ean_8','upc_a','data_matrix']});
-      const found=await detector.detect(videoRef.current);
-      if(!found.length){setMessage('Még nem látok kódot. Tartsd stabilan a kamera elé.');return;}
-      setCode(found[0].rawValue);setFormat(found[0].format==='qr_code'?'qr':'barcode');setMessage('Kód beolvasva.');streamRef.current?.getTracks().forEach(t=>t.stop());setCamera(false);
-    } catch(e){setMessage(e instanceof Error?e.message:'Nem sikerült.');}
+      if (Detector) {
+        try {
+          const detector=new Detector({formats:['qr_code','code_128','ean_13','ean_8','upc_a','data_matrix']});
+          const found=await detector.detect(videoRef.current);
+          if(found.length){
+            setCode(found[0].rawValue);
+            setFormat(found[0].format==='qr_code'?'qr':'barcode');
+            setMessage('Kód beolvasva.');
+            streamRef.current?.getTracks().forEach(t=>t.stop());
+            setCamera(false);
+            return;
+          }
+        } catch {
+          // ZXing fallback follows below.
+        }
+      }
+
+      const { BrowserMultiFormatReader } = await import('@zxing/browser');
+      const reader = new BrowserMultiFormatReader();
+      const result = reader.decode(videoRef.current);
+      setCode(result.getText());
+      setFormat(String(result.getBarcodeFormat()).toUpperCase().includes('QR')?'qr':'barcode');
+      setMessage('Kód beolvasva.');
+      streamRef.current?.getTracks().forEach(t=>t.stop());
+      setCamera(false);
+    } catch {
+      setMessage('Még nem látok olvasható kódot. Tartsd stabilan a kamera elé.');
+    }
   }
 
   return <div className="modal-backdrop"><div className="modal-card">

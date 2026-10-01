@@ -1,16 +1,14 @@
 import { NextResponse } from 'next/server';
-import { fallbackOffers } from '@/lib/fallback-offers';
 import { collectLiveOffers } from '@/lib/providers';
 
-export const revalidate = 60 * 60 * 12;
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const live=await collectLiveOffers();
-  const isProd=process.env.NODE_ENV==='production';
+  const live = await collectLiveOffers();
   return NextResponse.json({
-    offers: live.offers.length ? live.offers : (isProd ? [] : fallbackOffers),
+    offers: live.offers,
     refreshedAt: new Date().toISOString(),
     sourceStates: live.sources,
-    mode: live.offers.length ? 'live' : (isProd ? 'unavailable' : 'demo')
+    mode: live.offers.length ? 'live' : 'unavailable'
   });
 }

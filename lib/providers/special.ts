@@ -477,6 +477,63 @@ async function scrapeTesco(source: RetailSource): Promise<Offer[]> {
 }
 
 
+
+function obiUnitPriceToPack(name:string,value:number,unit:string){
+  const normalized=unit.toLocaleLowerCase('hu').replace('liter','l').replace('darab','db').replace('kg','kg');
+  if(normalized==='db') return Math.round(value);
+  if(normalized==='m²'||normalized==='m2') return Math.round(value);
+  const quantities=[...name.matchAll(/(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l|db|darab)\b/gi)];
+  if(quantities.length!==1) return Math.round(value);
+  const qty=Number(quantities[0][1].replace(',','.'));
+  const qUnit=quantities[0][2].toLowerCase();
+  if(!Number.isFinite(qty)) return Math.round(value);
+  if(normalized==='kg'&&qUnit==='kg') return Math.round(value*qty);
+  if(normalized==='kg'&&qUnit==='g') return Math.round(value*qty/1000);
+  if(normalized==='l'&&qUnit==='l') return Math.round(value*qty);
+  if(normalized==='l'&&qUnit==='ml') return Math.round(value*qty/1000);
+  if(normalized==='db'&&/^(?:db|darab)$/.test(qUnit)) return Math.round(value*qty);
+  return Math.round(value);
+}
+
+async function scrapeObi(source:RetailSource):Promise<Offer[]>{
+  const html=await fetchHtml(source.url);
+  const data=lines(html);
+  const offers:Offer[]=[];
+
+  for(const line of data){
+    if(!/Összehasonlítás/i.test(line)||!/Ft\s*\//i.test(line)) continue;
+    const priceMatch=line.match(/([\d\s.]+)\s*Ft\s*\/\s*(Liter|Darab|KG|m²|m2|Eladási egység)/i);
+    if(!priceMatch) continue;
+    const unitPrice=number(priceMatch[1]);
+    if(!unitPrice||unitPrice>1_500_000) continue;
+
+    let name=line
+      .replace(/^.*?Összehasonlítás\s*/i,'')
+      .replace(/([\d\s.]+)\s*Ft\s*\/.*$/i,'')
+      .replace(/\s+\d(?:[.,]\d)?\s+\d(?:[.,]\d)?\s*\([^)]*\).*$/,'')
+      .replace(/\s+\([^)]*\)\s*$/,'')
+      .trim();
+    if(name.length<3||name.length>190) continue;
+
+    const unit=priceMatch[2];
+    const price=obiUnitPriceToPack(name,unitPrice,unit);
+    offers.push({
+      id:'obi-'+slug(name)+'-'+price,
+      name,
+      category:categoryFor(name),
+      store:'obi',
+      price,
+      unitLabel:/m²|m2/i.test(unit)?'1 m²':unitFrom([name]),
+      unitPrice:Math.round(unitPrice),
+      validFrom:isoToday(),
+      validTo:isoFuture(30),
+      image:imageNear(html,name,source.url,placeholder('obi',name)),
+      sourceUrl:source.url
+    });
+  }
+  return dedupe(offers).slice(0,180);
+}
+
 function dateFromMonthDay(month: number, day: number) {
   const now = new Date();
   let d = new Date(now.getFullYear(), month - 1, day);
@@ -625,6 +682,7 @@ export async function scrapeSpecialRetailer(source: RetailSource): Promise<Offer
   if (source.id === 'lidl') return scrapeLidl(source);
   if (source.id === 'penny') return scrapePenny(source);
   if (source.id === 'tesco') return scrapeTesco(source);
+  if (source.id === 'obi') return scrapeObi(source);
   if (source.id === 'ikea') return scrapeIkea(source);
   if (source.id === 'decathlon') return scrapeDecathlon(source);
   if (source.id === 'deichmann') return scrapeDeichmann(source);

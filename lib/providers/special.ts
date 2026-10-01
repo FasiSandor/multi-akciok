@@ -476,12 +476,159 @@ async function scrapeTesco(source: RetailSource): Promise<Offer[]> {
   return dedupe(offers).slice(0,120);
 }
 
+
+function dateFromMonthDay(month: number, day: number) {
+  const now = new Date();
+  let d = new Date(now.getFullYear(), month - 1, day);
+  if (d.getTime() < now.getTime() - 45 * 24 * 3600 * 1000) d = new Date(now.getFullYear() + 1, month - 1, day);
+  return d.toISOString().slice(0,10);
+}
+
+async function scrapeIkea(source: RetailSource): Promise<Offer[]> {
+  const url = 'https://www.ikea.com/hu/hu/offers/limited-time-offers/';
+  const html = await fetchHtml(url);
+  const data = lines(html);
+  const offers: Offer[] = [];
+
+  for (let i = 0; i < data.length; i++) {
+    const oldMatch = data[i].match(/([\d .]+)\s*Ft.*Előző ár/i);
+    if (!oldMatch) continue;
+
+    const oldPrice = number(oldMatch[1]);
+    const after = data.slice(i + 1, i + 6);
+    const currentLine = after.find(x => /([\d .]+)\s*Ft.*\bÁr\b/i.test(x));
+    if (!currentLine) continue;
+    const currentMatch = currentLine.match(/([\d .]+)\s*Ft/i);
+    if (!currentMatch) continue;
+    const price = number(currentMatch[1]);
+    if (!price || !oldPrice || price >= oldPrice) continue;
+
+    const before = data.slice(Math.max(0, i - 7), i);
+    const name = [...before].reverse().find(x =>
+      x.length >= 3 && x.length <= 170 &&
+      !/Vásár|Összehasonlítás|kedvezmény|megtakarítás|Eredménylista|Rendezés|szűrés|tétel/i.test(x) &&
+      !/\bFt\b/i.test(x)
+    );
+    if (!name) continue;
+
+    const validLine = after.find(x => /Az ár .* után/i.test(x));
+    const start = validLine ? parseIsoDate(validLine) ?? isoToday() : isoToday();
+
+    offers.push({
+      id: `ikea-${slug(name)}-${price}`,
+      name,
+      category: categoryFor(name),
+      store: 'ikea',
+      price,
+      oldPrice,
+      unitLabel: unitFrom([name]),
+      validFrom: start,
+      validTo: isoFuture(30),
+      image: imageNear(html, name, url, placeholder('ikea', name)),
+      sourceUrl: url
+    });
+  }
+
+  return dedupe(offers).slice(0,160);
+}
+
+async function scrapeJysk(source: RetailSource): Promise<Offer[]> {
+  const html = await fetchHtml(source.url);
+  const data = lines(html);
+  const offers: Offer[] = [];
+
+  for (let i = 0; i < data.length; i++) {
+    const current = data[i].match(/^([\d .]+)\s*Ft\s*\/(db|szett|pár|csomag|garnitúra)?/i);
+    if (!current) continue;
+    const next = data[i + 1]?.match(/^([\d .]+)\s*Ft\s*\/(db|szett|pár|csomag|garnitúra)?/i);
+    if (!next) continue;
+
+    const price = number(current[1]);
+    const oldPrice = number(next[1]);
+    if (!price || !oldPrice || price >= oldPrice) continue;
+
+    const before = data.slice(Math.max(0, i - 5), i);
+    const rawName = [...before].reverse().find(x =>
+      x.length >= 4 && x.length <= 180 &&
+      !/kedvezmény|ajánlat|készlet erejéig|További opciók|plus|^-?\d+%/i.test(x) &&
+      !/\bFt\b/i.test(x)
+    );
+    if (!rawName) continue;
+    const name = rawName.replace(/^plus\s+/i,'').trim();
+
+    offers.push({
+      id: `jysk-${slug(name)}-${price}`,
+      name,
+      category: categoryFor(name),
+      store: 'jysk',
+      price,
+      oldPrice,
+      unitLabel: current[2] ? `1 ${current[2]}` : '1 db',
+      validFrom: isoToday(),
+      validTo: isoFuture(14),
+      image: imageNear(html, name, source.url, placeholder('jysk', name)),
+      sourceUrl: source.url
+    });
+  }
+
+  return dedupe(offers).slice(0,140);
+}
+
+async function scrapeDecathlon(source: RetailSource): Promise<Offer[]> {
+  const html = await fetchHtml(source.url);
+  const data = lines(html);
+  const offers: Offer[] = [];
+
+  for (let i = 0; i < data.length; i++) {
+    const line = data[i];
+    const priceMatch = line.match(/Jelenlegi ár\s*([\d\s.]+)\s*Ft\s*Korábbi ár\s*([\d\s.]+)\s*Ft/i);
+    if (!priceMatch) continue;
+
+    const price = number(priceMatch[1]);
+    const oldPrice = number(priceMatch[2]);
+    if (!price || !oldPrice || price >= oldPrice) continue;
+
+    const before = data.slice(Math.max(0, i - 10), i);
+    const name = [...before].reverse().find(x =>
+      x.length >= 4 && x.length <= 180 &&
+      !/^\(?\d+[.,]?\d*\)?$/i.test(x) &&
+      !/szavazat|színben|Leárazás|Kiszállítás|Online leárazás|kedvezmény|Szűrők|termék$/i.test(x)
+    );
+    if (!name) continue;
+
+    const validity = [...before].reverse().find(x => /Online leárazás\s+\d{1,2}[.]\d{1,2}-ig/i.test(x));
+    const md = validity?.match(/(\d{1,2})[.](\d{1,2})-ig/i);
+    const validTo = md ? dateFromMonthDay(Number(md[1]), Number(md[2])) : isoFuture(7);
+    const loyaltyOnly = /Hűségkártyás ajánlat/i.test(before.join(' '));
+
+    offers.push({
+      id: `decathlon-${slug(name)}-${price}`,
+      name,
+      category: categoryFor(name),
+      store: 'decathlon',
+      price,
+      oldPrice,
+      unitLabel: unitFrom([name]),
+      validFrom: isoToday(),
+      validTo,
+      loyaltyOnly,
+      image: imageNear(html, name, source.url, placeholder('decathlon', name)),
+      sourceUrl: source.url
+    });
+  }
+
+  return dedupe(offers).slice(0,180);
+}
+
 export async function scrapeSpecialRetailer(source: RetailSource): Promise<Offer[] | null> {
   if (source.id === 'aldi') return scrapeAldi(source);
   if (source.id === 'lidl') return scrapeLidl(source);
   if (source.id === 'penny') return scrapePenny(source);
   if (source.id === 'tesco') return scrapeTesco(source);
+  if (source.id === 'ikea') return scrapeIkea(source);
+  if (source.id === 'decathlon') return scrapeDecathlon(source);
   if (source.id === 'deichmann') return scrapeDeichmann(source);
+  if (source.id === 'jysk') return scrapeJysk(source);
   if (source.id === 'auchan') return scrapeAuchan(source);
   return null;
 }

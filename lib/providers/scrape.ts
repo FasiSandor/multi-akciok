@@ -15,7 +15,8 @@ export const retailSources: RetailSource[] = [
   { id: 'praktiker', name: 'Praktiker', url: 'https://www.praktiker.hu/utosar/cc/3539' },
   { id: 'deichmann', name: 'Deichmann', url: 'https://www.deichmann.com/hu-hu/c/akcio-akcios-cipok-481' },
   { id: 'jysk', name: 'JYSK', url: 'https://jysk.hu/happydays' },
-  { id: 'rossmann', name: 'Rossmann', url: 'https://shop.rossmann.hu/altalanos-akciok' }
+  { id: 'rossmann', name: 'Rossmann', url: 'https://shop.rossmann.hu/altalanos-akciok' },
+  { id: 'euronics', name: 'Euronics', url: 'https://euronics.hu/het-ajanlatai' }
 ];
 
 function clean(value: string) {

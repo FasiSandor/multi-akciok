@@ -61,6 +61,20 @@ function unitFrom(values: string[]) {
   return m ? m[1].replace(/\blt\b/i, 'l') : '1 db';
 }
 
+function unitPriceLabelFrom(text:string){
+  const slash=text.match(/Ft\s*\/\s*(kg|l|lt|db|darab|m2|m²|100\s*ml|100\s*g|liter|each)/i);
+  if(slash){
+    const raw=slash[1].toLowerCase().replace('liter','l').replace('each','db').replace('darab','db').replace('lt','l');
+    return '/'+raw;
+  }
+  const one=text.match(/1\s*(kg|l|lt|db|darab)\s*(?:=|\s)/i);
+  if(one){
+    const raw=one[1].toLowerCase().replace('darab','db').replace('lt','l');
+    return '/'+raw;
+  }
+  return undefined;
+}
+
 function parseIsoDate(text: string) {
   const m = text.match(/(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})/);
   if (!m) return undefined;
@@ -166,6 +180,7 @@ async function scrapePenny(source: RetailSource): Promise<Offer[]> {
       oldPrice: regular > price ? regular : undefined,
       unitLabel: unitFrom(before),
       unitPrice,
+      unitPriceLabel: unitPriceLine ? unitPriceLabelFrom(unitPriceLine) : undefined,
       validFrom,
       validTo,
       loyaltyOnly: true,
@@ -244,7 +259,8 @@ function parseAuchanPage(html: string, url: string) {
     const oldLine = after.find(x => /Eredeti ár/i.test(x));
     const oldPrice = oldLine ? number(oldLine) : undefined;
     const unitLine = after.find(x => /Egységár/i.test(x));
-    const unitPrice = unitLine ? number(unitLine) : undefined;
+    const unitMatch = unitLine?.match(/([\d\s.]+)\s*Ft\s*\/\s*(kg|l|lt|db|darab|m2|m²|liter)/i);
+    const unitPrice = unitMatch ? number(unitMatch[1]) : undefined;
 
     offers.push({
       id: `auchan-${slug(name)}-${price}`,
@@ -255,6 +271,7 @@ function parseAuchanPage(html: string, url: string) {
       oldPrice: oldPrice && oldPrice > price ? oldPrice : undefined,
       unitLabel: unitFrom(after),
       unitPrice,
+      unitPriceLabel: unitLine ? unitPriceLabelFrom(unitLine) : undefined,
       validFrom: isoToday(),
       validTo: isoToday(),
       validityText: 'Ma ellenőrizve',
@@ -346,6 +363,7 @@ async function scrapeAldi(source: RetailSource): Promise<Offer[]> {
       price,
       unitLabel:unitFrom([name]),
       unitPrice:Math.round(unitPrice.value),
+      unitPriceLabel:'/'+(unitPrice.unit==='darab'?'db':unitPrice.unit),
       validFrom:current.start,
       validTo:current.end,
       image:imageNear(html,name,source.url,placeholder('aldi',name)),
@@ -407,8 +425,10 @@ function parseLidlPage(html: string, url: string) {
       oldPrice: oldPrice && oldPrice > price ? oldPrice : undefined,
       unitLabel: unitFrom(after),
       unitPrice,
+      unitPriceLabel: unitPriceLine ? unitPriceLabelFrom(unitPriceLine) : undefined,
       validFrom: range?.start ?? isoToday(),
-      validTo: range?.end ?? isoFuture(7),
+      validTo: range?.end ?? isoToday(),
+      validityText: range ? undefined : 'Ma ellenőrizve',
       loyaltyOnly: true,
       image: imageNear(html, name, url, placeholder('lidl', name)),
       sourceUrl: url
@@ -457,7 +477,7 @@ async function scrapeTesco(source: RetailSource): Promise<Offer[]> {
     if (!name) continue;
 
     const unitLine = after.find(x => /Ft\/(?:kg|litre|l|each|db)/i.test(x));
-    const unitPrice = unitLine ? number(unitLine) : undefined;
+    const unitPrice = unitLine ? number((unitLine.match(/([\d\s.]+)\s*Ft/i)||[])[1]||'') : undefined;
     const parsedTescoValidTo = parseTescoDate(data[i]);
     const validTo = parsedTescoValidTo ?? isoToday();
     const loyaltyOnly = /Clubcard/i.test(before.join(' ') + ' ' + data[i]);
@@ -471,6 +491,7 @@ async function scrapeTesco(source: RetailSource): Promise<Offer[]> {
       oldPrice: oldPrice && oldPrice > price ? oldPrice : undefined,
       unitLabel: unitFrom(before),
       unitPrice,
+      unitPriceLabel: unitLine ? unitPriceLabelFrom(unitLine.replace('litre','l')) : undefined,
       validFrom: isoToday(),
       validTo,
       validityText: parsedTescoValidTo ? undefined : 'Ma ellenőrizve',
@@ -509,7 +530,8 @@ async function scrapeRossmann(source:RetailSource):Promise<Offer[]>{
     if(!price||!oldPrice||price>=oldPrice) continue;
 
     const unitLine=after.slice(oldIndex+1).find(x=>/Ft\s*\/(?:l|kg|db|100\s*ml|100\s*g)/i.test(x));
-    const unitPrice=unitLine?number(unitLine):undefined;
+    const unitMatch=unitLine?.match(/([\d\s.]+)\s*Ft\s*\/\s*(l|kg|db|100\s*ml|100\s*g)/i);
+    const unitPrice=unitMatch?number(unitMatch[1]):undefined;
 
     offers.push({
       id:'rossmann-'+slug(name)+'-'+price,
@@ -520,6 +542,7 @@ async function scrapeRossmann(source:RetailSource):Promise<Offer[]>{
       oldPrice,
       unitLabel:unitFrom([name]),
       unitPrice,
+      unitPriceLabel:unitLine?unitPriceLabelFrom(unitLine):undefined,
       validFrom:isoToday(),
       validTo:isoToday(),
       validityText:'Ma ellenőrizve',
@@ -642,6 +665,7 @@ async function scrapeObi(source:RetailSource):Promise<Offer[]>{
       price,
       unitLabel:/m²|m2/i.test(unit)?'1 m²':unitFrom([name]),
       unitPrice:Math.round(unitPrice),
+      unitPriceLabel:'/'+(unit.toLowerCase()==='liter'?'l':unit.toLowerCase()==='darab'?'db':unit.toLowerCase()),
       validFrom:isoToday(),
       validTo:isoToday(),
       validityText:'Ma ellenőrizve',

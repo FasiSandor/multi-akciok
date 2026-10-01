@@ -45,6 +45,27 @@ function discount(offer: Offer) {
   return Math.round((1 - offer.price / offer.oldPrice) * 100);
 }
 
+function textForBackground(hex: string) {
+  const clean = hex.replace('#','');
+  if (clean.length !== 6) return '#ffffff';
+  const r=parseInt(clean.slice(0,2),16),g=parseInt(clean.slice(2,4),16),b=parseInt(clean.slice(4,6),16);
+  return (r*299+g*587+b*114)/1000 > 150 ? '#0b2545' : '#ffffff';
+}
+
+function cardVisual(card: LoyaltyCard) {
+  if (card.store === 'custom') {
+    const color=card.customColor || '#334155';
+    const name=card.customStoreName || 'Saját kártya';
+    return {name,short:name.slice(0,8).toUpperCase(),color,text:textForBackground(color)};
+  }
+  return stores[card.store];
+}
+
+function CardBadge({card}:{card:LoyaltyCard}) {
+  const v=cardVisual(card);
+  return <span className="store-badge" style={{background:v.color,color:v.text}}>{v.short}</span>;
+}
+
 export default function Page() {
   const [tab, setTab] = useState<Tab>('home');
   const [offers, setOffers] = useState<Offer[]>(process.env.NODE_ENV === 'development' ? fallbackOffers : []);
@@ -216,14 +237,16 @@ function OfferCard({ offer, onClick }: { offer: Offer; onClick: () => void }) {
 }
 
 function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; query: string; setQuery: (s: string) => void; onSelect: (o: Offer) => void }) {
+  const [storeFilter,setStoreFilter]=useState<StoreId | null>(null);
+  const visible=storeFilter?offers.filter(o=>o.store===storeFilter):offers;
   return (
     <div className="screen search-screen">
       <h1>Akciókereső</h1>
       <div className="searchbox large"><Search size={20}/><input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Mit keresel?"/><SlidersHorizontal size={19}/></div>
-      <div className="filter-chips"><button className="active">Összes</button>{storeOrder.map(s=><button key={s}>{stores[s].name}</button>)}</div>
-      <p className="result-count">{offers.length} aktuális ajánlat</p>
+      <div className="filter-chips"><button className={!storeFilter?'active':''} onClick={()=>setStoreFilter(null)}>Összes</button>{storeOrder.map(s=><button className={storeFilter===s?'active':''} onClick={()=>setStoreFilter(s)} key={s}>{stores[s].name}</button>)}</div>
+      <p className="result-count">{visible.length} aktuális ajánlat</p>
       <div className="results-list">
-        {offers.map(o => <button className="result-card" key={o.id} onClick={()=>onSelect(o)}>
+        {visible.map(o => <button className="result-card" key={o.id} onClick={()=>onSelect(o)}>
           <div className="result-image"><Image src={o.image} alt={o.name} fill sizes="88px"/></div>
           <div className="result-main"><div className="result-top"><StoreBadge store={o.store} compact/>{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><strong>{o.name}</strong><small>{o.unitLabel} · {o.category}</small></div>
           <div className="result-price"><b>{money(o.price)}</b>{o.oldPrice&&<del>{money(o.oldPrice)}</del>}<ChevronRight size={18}/></div>
@@ -346,9 +369,9 @@ function CardsView({ cards, setCards, onAdd, onOpen }: { cards: LoyaltyCard[]; s
       <p className="muted">Minden hűségkártyád egy helyen. Érintsd meg a pénztári megjelenítéshez.</p>
       <div className="wallet-stack">
         {cards.map(card=>{
-          const s=stores[card.store];
-          return <button className="wallet-card" key={card.id} onClick={()=>onOpen(card)} style={{background:s.color,color:s.text}}>
-            <div className="wallet-brand"><StoreBadge store={card.store}/><div><strong>{card.label}</strong><small>{card.code.replace(/(.{4})/g,'$1 ').trim()}</small></div></div>
+          const v=cardVisual(card);
+          return <button className="wallet-card" key={card.id} onClick={()=>onOpen(card)} style={{background:v.color,color:v.text}}>
+            <div className="wallet-brand"><CardBadge card={card}/><div><strong>{card.label}</strong><small>{card.code.replace(/(.{4})/g,'$1 ').trim()}</small></div></div>
             <div className="wallet-code"><CodeDisplay value={card.code} format={card.format}/></div>
           </button>
         })}
@@ -365,6 +388,8 @@ function AddCardModal({ onClose, onSave }: { onClose:()=>void; onSave:(c:Loyalty
   const [code,setCode]=useState('');
   const [format,setFormat]=useState<'qr'|'barcode'>('qr');
   const [message,setMessage]=useState('');
+  const [customStoreName,setCustomStoreName]=useState('');
+  const [customColor,setCustomColor]=useState('#334155');
   const fileRef=useRef<HTMLInputElement>(null);
   const videoRef=useRef<HTMLVideoElement>(null);
   const [camera,setCamera]=useState(false);
@@ -372,7 +397,7 @@ function AddCardModal({ onClose, onSave }: { onClose:()=>void; onSave:(c:Loyalty
 
   useEffect(()=>()=>{streamRef.current?.getTracks().forEach(t=>t.stop())},[]);
 
-  function chooseStore(value: StoreId) { setStore(value); setLabel(value==='custom'?'Saját hűségkártya':stores[value].name + (value==='tesco'?' Clubcard':value==='lidl'?' Plus':' kártya')); }
+  function chooseStore(value: StoreId) { setStore(value); setLabel(value==='custom'?'Saját hűségkártya':stores[value].name + (value==='tesco'?' Clubcard':value==='lidl'?' Plus':' kártya')); if(value!=='custom') setCustomStoreName(''); }
 
   async function detectFromFile(file: File) {
     setMessage('Kód keresése…');
@@ -455,13 +480,14 @@ function AddCardModal({ onClose, onSave }: { onClose:()=>void; onSave:(c:Loyalty
   return <div className="modal-backdrop"><div className="modal-card">
     <div className="modal-head"><div><ScanLine/><h2>Kártya hozzáadása</h2></div><button className="icon-btn" onClick={onClose}><X/></button></div>
     <label>Üzlet<select value={store} onChange={e=>chooseStore(e.target.value as StoreId)}>{[...storeOrder,'custom' as StoreId].map(s=><option key={s} value={s}>{stores[s].name}</option>)}</select></label>
+    {store==='custom'&&<><label>Üzlet neve<input value={customStoreName} onChange={e=>setCustomStoreName(e.target.value)} placeholder="pl. Rossmann, Müller, DM"/></label><label>Kártya színe<div className="color-input-row"><input type="color" value={customColor} onChange={e=>setCustomColor(e.target.value)}/><span className="color-preview" style={{background:customColor,color:textForBackground(customColor)}}>{(customStoreName||'SAJÁT').slice(0,8).toUpperCase()}</span></div></label></>}
     <label>Kártya neve<input value={label} onChange={e=>setLabel(e.target.value)}/></label>
     <div className="scan-actions"><button onClick={startCamera}><Camera/> Kamera</button><button onClick={()=>fileRef.current?.click()}><ImagePlus/> Kép/screenshot</button><input ref={fileRef} hidden type="file" accept="image/*" onChange={e=>e.target.files?.[0]&&detectFromFile(e.target.files[0])}/></div>
     {camera&&<div className="camera-box"><video ref={videoRef} playsInline muted/><div className="scan-frame"/><button className="primary" onClick={scanFrame}>Kód beolvasása</button></div>}
     <label>Kód<input value={code} onChange={e=>setCode(e.target.value)} placeholder="Beolvashatod vagy beírhatod"/></label>
     <div className="segmented small"><button className={format==='qr'?'active':''} onClick={()=>setFormat('qr')}>QR</button><button className={format==='barcode'?'active':''} onClick={()=>setFormat('barcode')}>Vonalkód</button></div>
     {message&&<p className="scan-message">{message}</p>}
-    <button className="primary wide" disabled={!code.trim()} onClick={()=>onSave({id:crypto.randomUUID(),store,label,code:code.trim(),format})}><CheckCircle2/> Kártya mentése</button>
+    <button className="primary wide" disabled={!code.trim()||(store==='custom'&&!customStoreName.trim())} onClick={()=>onSave({id:crypto.randomUUID(),store,label,code:code.trim(),format,customStoreName:store==='custom'?customStoreName.trim():undefined,customColor:store==='custom'?customColor:undefined})}><CheckCircle2/> Kártya mentése</button>
   </div></div>
 }
 
@@ -487,9 +513,9 @@ function AddRetailerModal({onClose,onSave}:{onClose:()=>void;onSave:(r:CustomRet
 }
 
 function FullCard({ card, onClose }: { card:LoyaltyCard; onClose:()=>void }) {
-  const s=stores[card.store];
+  const v=cardVisual(card);
   useEffect(()=>{const old=document.body.style.background;document.body.style.background='#fff';return()=>{document.body.style.background=old}},[]);
-  return <div className="full-card-screen"><div className="full-card-top"><button className="icon-btn" onClick={onClose}><X/></button><span>Pénztári nézet</span></div><div className="full-card-brand" style={{background:s.color,color:s.text}}><StoreBadge store={card.store}/><h1>{card.label}</h1><p>{card.code}</p></div><div className="full-code"><CodeDisplay value={card.code} format={card.format} large/></div><p className="brightness-note">☀️ A képernyőt tartsd a leolvasó elé.</p></div>
+  return <div className="full-card-screen"><div className="full-card-top"><button className="icon-btn" onClick={onClose}><X/></button><span>Pénztári nézet</span></div><div className="full-card-brand" style={{background:v.color,color:v.text}}><CardBadge card={card}/><h1>{card.label}</h1>{card.store==='custom'&&<small>{v.name}</small>}<p>{card.code}</p></div><div className="full-code"><CodeDisplay value={card.code} format={card.format} large/></div><p className="brightness-note">☀️ A képernyőt tartsd a leolvasó elé.</p></div>
 }
 
 function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWatchTerms,watchHits,onAddRetailer,onRemoveRetailer}:{customRetailers:CustomRetailer[];sourceStates:SourceState[];lastRefresh:string;watchTerms:string[];setWatchTerms:Dispatch<SetStateAction<string[]>>;watchHits:WatchHit[];onAddRetailer:()=>void;onRemoveRetailer:(id:string)=>void}){const [watchInput,setWatchInput]=useState('');function addWatch(){const value=watchInput.trim();if(!value)return;setWatchTerms(prev=>prev.some(x=>x.toLocaleLowerCase('hu')===value.toLocaleLowerCase('hu'))?prev:[...prev,value]);setWatchInput('');}return <div className="screen profile-screen"><BrandHeader/><div className="profile-hero"><div className="avatar"><UserRound/></div><h1>MULTI AKCIÓK</h1><p>Saját bevásárlási asszisztens</p></div><div className="settings-list"><button><Heart/> Figyelőlista <ChevronRight/></button><button><Bell/> Értesítések <ChevronRight/></button><button><Tag/> Árhistorika <ChevronRight/></button><button onClick={onAddRetailer}><Plus/> Üzlet / forrás hozzáadása <ChevronRight/></button></div><div className="watch-panel"><div className="section-title"><h2>Figyelőlista</h2><small>{watchTerms.length} figyelés</small></div><div className="watch-input"><input value={watchInput} onChange={e=>setWatchInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addWatch()}} placeholder="pl. vaj, lazac, futócipő"/><button onClick={addWatch}><Plus size={17}/></button></div>{watchTerms.length===0?<p className="watch-empty">Adj hozzá terméket vagy márkát, és frissítéskor megkeressük a legjobb aktuális ajánlatot.</p>:<div className="watch-chips">{watchTerms.map(term=>{const hit=watchHits.find(x=>x.term===term);return <div className="watch-chip" key={term}><div><b>{term}</b><small>{hit?stores[hit.offer.store].name+' · '+money(hit.offer.price):'Nincs aktuális találat'}</small></div><button onClick={()=>setWatchTerms(prev=>prev.filter(x=>x!==term))}><X size={14}/></button></div>})}</div>}</div><div className="source-panel"><div className="section-title"><h2>Mai adatforrások</h2><small>{lastRefresh?new Date(lastRefresh).toLocaleTimeString('hu-HU',{hour:'2-digit',minute:'2-digit'}):''}</small></div>{sourceStates.map(s=><div className="source-row" key={s.id}><span className={s.ok&&s.count>0?'source-dot ok':s.ok?'source-dot warn':'source-dot bad'}/><div><b>{s.name}</b><small>{s.count>0?`${s.count} ajánlat`:s.note||'Nincs adat'}</small></div><a href={s.url} target="_blank" rel="noreferrer"><ExternalLink size={15}/></a></div>)}</div>{customRetailers.length>0&&<div className="custom-retailers-panel"><div className="section-title"><h2>Saját üzletek</h2></div>{customRetailers.map(r=><div className="custom-retailer-row" key={r.id}><span style={{background:r.color}}>{r.name.slice(0,2).toUpperCase()}</span><div><b>{r.name}</b><small>{r.url||'Saját üzlet'}</small></div><button onClick={()=>onRemoveRetailer(r.id)} aria-label="Törlés"><Trash2 size={17}/></button></div>)}</div>}</div>}

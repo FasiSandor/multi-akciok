@@ -204,7 +204,8 @@ async function scrapeDeichmann(source: RetailSource): Promise<Offer[]> {
       oldPrice,
       unitLabel: '1 pár',
       validFrom: isoToday(),
-      validTo: isoFuture(14),
+      validTo: isoToday(),
+      validityText: 'Ma ellenőrizve',
       image: imageNear(html, name, url, placeholder('deichmann', name)),
       sourceUrl: url
     });
@@ -255,7 +256,8 @@ function parseAuchanPage(html: string, url: string) {
       unitLabel: unitFrom(after),
       unitPrice,
       validFrom: isoToday(),
-      validTo: isoFuture(7),
+      validTo: isoToday(),
+      validityText: 'Ma ellenőrizve',
       image: imageNear(html, name, url, placeholder('auchan', name)),
       sourceUrl: url
     });
@@ -456,7 +458,8 @@ async function scrapeTesco(source: RetailSource): Promise<Offer[]> {
 
     const unitLine = after.find(x => /Ft\/(?:kg|litre|l|each|db)/i.test(x));
     const unitPrice = unitLine ? number(unitLine) : undefined;
-    const validTo = parseTescoDate(data[i]) ?? isoFuture(7);
+    const parsedTescoValidTo = parseTescoDate(data[i]);
+    const validTo = parsedTescoValidTo ?? isoToday();
     const loyaltyOnly = /Clubcard/i.test(before.join(' ') + ' ' + data[i]);
 
     offers.push({
@@ -470,6 +473,7 @@ async function scrapeTesco(source: RetailSource): Promise<Offer[]> {
       unitPrice,
       validFrom: isoToday(),
       validTo,
+      validityText: parsedTescoValidTo ? undefined : 'Ma ellenőrizve',
       loyaltyOnly,
       image: imageNear(html, name, url, placeholder('tesco', name)),
       sourceUrl: url
@@ -518,6 +522,7 @@ async function scrapeRossmann(source:RetailSource):Promise<Offer[]>{
       unitPrice,
       validFrom:isoToday(),
       validTo:isoToday(),
+      validityText:'Ma ellenőrizve',
       image:imageNear(html,name,source.url,placeholder('rossmann',name)),
       sourceUrl:source.url
     });
@@ -638,7 +643,8 @@ async function scrapeObi(source:RetailSource):Promise<Offer[]>{
       unitLabel:/m²|m2/i.test(unit)?'1 m²':unitFrom([name]),
       unitPrice:Math.round(unitPrice),
       validFrom:isoToday(),
-      validTo:isoFuture(30),
+      validTo:isoToday(),
+      validityText:'Ma ellenőrizve',
       image:imageNear(html,name,source.url,placeholder('obi',name)),
       sourceUrl:source.url
     });
@@ -692,7 +698,8 @@ async function scrapeIkea(source: RetailSource): Promise<Offer[]> {
       oldPrice,
       unitLabel: unitFrom([name]),
       validFrom: start,
-      validTo: isoFuture(30),
+      validTo: isoToday(),
+      validityText: 'Készlet erejéig · ma ellenőrizve',
       image: imageNear(html, name, url, placeholder('ikea', name)),
       sourceUrl: url
     });
@@ -734,7 +741,8 @@ async function scrapeJysk(source: RetailSource): Promise<Offer[]> {
       oldPrice,
       unitLabel: current[2] ? `1 ${current[2]}` : '1 db',
       validFrom: isoToday(),
-      validTo: isoFuture(14),
+      validTo: isoToday(),
+      validityText: 'Ma ellenőrizve',
       image: imageNear(html, name, source.url, placeholder('jysk', name)),
       sourceUrl: source.url
     });
@@ -767,7 +775,7 @@ async function scrapeDecathlon(source: RetailSource): Promise<Offer[]> {
 
     const validity = [...before].reverse().find(x => /Online leárazás\s+\d{1,2}[.]\d{1,2}-ig/i.test(x));
     const md = validity?.match(/(\d{1,2})[.](\d{1,2})-ig/i);
-    const validTo = md ? dateFromMonthDay(Number(md[1]), Number(md[2])) : isoFuture(7);
+    const validTo = md ? dateFromMonthDay(Number(md[1]), Number(md[2])) : isoToday();
     const loyaltyOnly = /Hűségkártyás ajánlat/i.test(before.join(' '));
 
     offers.push({
@@ -780,6 +788,7 @@ async function scrapeDecathlon(source: RetailSource): Promise<Offer[]> {
       unitLabel: unitFrom([name]),
       validFrom: isoToday(),
       validTo,
+      validityText: md ? undefined : 'Ma ellenőrizve',
       loyaltyOnly,
       image: imageNear(html, name, source.url, placeholder('decathlon', name)),
       sourceUrl: source.url

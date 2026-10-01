@@ -1,7 +1,7 @@
 export type StoreId =
   | 'aldi' | 'lidl' | 'penny' | 'tesco' | 'spar' | 'auchan'
   | 'ikea' | 'decathlon' | 'obi' | 'praktiker' | 'deichmann' | 'jysk'
-  | 'rossmann' | 'dm' | 'mediamarkt'
+  | 'rossmann' | 'dm' | 'mediamarkt' | 'euronics'
   | 'custom';
 
 export type Offer = {
@@ -13,6 +13,8 @@ export type Offer = {
   oldPrice?: number;
   unitLabel: string;
   unitPrice?: number;
+  unitPriceLabel?: string;
+  validityText?: string;
   validFrom: string;
   validTo: string;
   image: string;

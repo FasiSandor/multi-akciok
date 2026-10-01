@@ -11,6 +11,7 @@ import type { CustomRetailer, LoyaltyCard, Offer, StoreId } from '@/lib/types';
 import { fallbackOffers } from '@/lib/fallback-offers';
 import { knownStoreOrder, stores } from '@/lib/stores';
 import { CodeDisplay } from '@/components/CodeDisplay';
+import { recordOfferHistory, readOfferHistoryStats, type HistoryStats } from '@/lib/client-history';
 
 type Tab = 'home' | 'search' | 'list' | 'cards' | 'profile';
 type SourceState = { id:string; name:string; url:string; ok:boolean; checkedAt:string; count:number; note?:string };
@@ -86,7 +87,7 @@ export default function Page() {
       const res = await fetch('/api/offers', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.offers)) setOffers(data.offers);
+        if (Array.isArray(data.offers)) { setOffers(data.offers); recordOfferHistory(data.offers); }
         if (Array.isArray(data.sourceStates)) setSourceStates(data.sourceStates);
         setLastRefresh(data.refreshedAt || new Date().toISOString());
       }
@@ -210,6 +211,8 @@ function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; qu
 }
 
 function OfferDetail({ offer, allOffers, onBack }: { offer: Offer; allOffers: Offer[]; onBack: () => void }) {
+  const [history, setHistory] = useState<HistoryStats | null>(null);
+  useEffect(() => setHistory(readOfferHistoryStats(offer)), [offer]);
   const comparable = allOffers.filter(o => o.category === offer.category || o.name.toLowerCase().includes(offer.name.split(' ')[0].toLowerCase())).slice(0,5);
   return (
     <div className="screen detail-screen">
@@ -222,7 +225,7 @@ function OfferDetail({ offer, allOffers, onBack }: { offer: Offer; allOffers: Of
           <StoreBadge store={o.store}/><div><strong>{stores[o.store].name}</strong>{o.loyaltyOnly&&<small>Kártyás ár</small>}</div><div className="compare-price"><b>{money(o.price)}</b>{o.oldPrice&&<del>{money(o.oldPrice)}</del>}{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><Heart size={18}/>
         </div>)}
       </div>
-      <div className="deal-score"><BarChart3 size={31}/><div><strong>Árhistorika épül</strong><span>Most: <b>{money(offer.price)}</b><br/>A „tényleg jó akció?” minősítést csak összegyűjtött korábbi árak alapján mutatjuk majd.</span></div><div className="history-pending">30 nap<small>adatgyűjtés</small></div></div>
+      <div className="deal-score"><BarChart3 size={31}/><div><strong>{history && history.samples > 1 ? 'Saját árhistorika' : 'Árhistorika épül'}</strong><span>Most: <b>{money(offer.price)}</b>{history && history.samples > 1 ? <><br/>Átlag: <b>{money(history.average)}</b> · minimum: <b>{money(history.minimum)}</b></> : <><br/>Az app csak valóban összegyűjtött korábbi árakból számol.</>}</span></div>{history && history.samples > 1 ? <div className="history-pending">{history.samples} nap<small>{offer.price < history.average ? 'átlag alatt' : 'mért adat'}</small></div> : <div className="history-pending">1. nap<small>adatgyűjtés</small></div>}</div>
     </div>
   );
 }

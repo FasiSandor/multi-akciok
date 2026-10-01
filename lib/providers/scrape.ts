@@ -9,12 +9,12 @@ export const retailSources: RetailSource[] = [
   { id: 'tesco', name: 'Tesco', url: 'https://bevasarlas.tesco.hu/shop/hu-HU/buylists/weekly-offers/weekly-offers/top-offer' },
   { id: 'spar', name: 'SPAR', url: 'https://www.spar.hu/akcioterv' },
   { id: 'auchan', name: 'Auchan', url: 'https://auchan.hu/shop' },
-  { id: 'ikea', name: 'IKEA', url: 'https://www.ikea.com/hu/hu/offers/' },
+  { id: 'ikea', name: 'IKEA', url: 'https://www.ikea.com/hu/hu/cat/last-chance/' },
   { id: 'decathlon', name: 'Decathlon', url: 'https://www.decathlon.hu/deals/decathlon-ajanlatai' },
   { id: 'obi', name: 'OBI', url: 'https://www.obi.hu/campaign/asdp_top_aras_termekek' },
   { id: 'praktiker', name: 'Praktiker', url: 'https://www.praktiker.hu/utosar/cc/3539' },
   { id: 'deichmann', name: 'Deichmann', url: 'https://www.deichmann.com/hu-hu/c/akcio-akcios-cipok-481' },
-  { id: 'jysk', name: 'JYSK', url: 'https://jysk.hu/happydays' },
+  { id: 'jysk', name: 'JYSK', url: 'https://jysk.hu/kampany' },
   { id: 'rossmann', name: 'Rossmann', url: 'https://shop.rossmann.hu/altalanos-akciok' },
   { id: 'euronics', name: 'Euronics', url: 'https://euronics.hu/het-ajanlatai' }
 ];

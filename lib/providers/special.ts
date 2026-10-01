@@ -732,47 +732,70 @@ async function scrapeIkea(source: RetailSource): Promise<Offer[]> {
   return dedupe(offers).slice(0,160);
 }
 
-async function scrapeJysk(source: RetailSource): Promise<Offer[]> {
-  const html = await fetchHtml(source.url);
-  const data = lines(html);
-  const offers: Offer[] = [];
+function parseJyskPage(html:string,url:string):Offer[]{
+  const data=lines(html);
+  const offers:Offer[]=[];
 
-  for (let i = 0; i < data.length; i++) {
-    const current = data[i].match(/^([\d .]+)\s*Ft\s*\/(db|szett|pár|csomag|garnitúra)?/i);
-    if (!current) continue;
-    const next = data[i + 1]?.match(/^([\d .]+)\s*Ft\s*\/(db|szett|pár|csomag|garnitúra)?/i);
-    if (!next) continue;
+  for(let i=0;i<data.length;i++){
+    const current=data[i].match(/^([\d .]+)\s*Ft\s*\/(db|szett|pár|csomag|garnitúra|cs)?/i);
+    if(!current) continue;
+    const next=data[i+1]?.match(/^([\d .]+)\s*Ft\s*\/(db|szett|pár|csomag|garnitúra|cs)?/i);
+    if(!next) continue;
 
-    const price = number(current[1]);
-    const oldPrice = number(next[1]);
-    if (!price || !oldPrice || price >= oldPrice) continue;
+    const price=number(current[1]);
+    const oldPrice=number(next[1]);
+    if(!price||!oldPrice||price>=oldPrice) continue;
 
-    const before = data.slice(Math.max(0, i - 5), i);
-    const rawName = [...before].reverse().find(x =>
-      x.length >= 4 && x.length <= 180 &&
-      !/kedvezmény|ajánlat|készlet erejéig|További opciók|plus|^-?\d+%/i.test(x) &&
+    const before=data.slice(Math.max(0,i-5),i);
+    const rawName=[...before].reverse().find(x=>
+      x.length>=4&&x.length<=180 &&
+      !/kedvezmény|ajánlat|készlet erejéig|További opciók|plus|basic|gold|^-?\d+%/i.test(x) &&
       !/\bFt\b/i.test(x)
     );
-    if (!rawName) continue;
-    const name = rawName.replace(/^plus\s+/i,'').trim();
+    if(!rawName) continue;
+    const name=rawName.replace(/^(?:plus|basic|gold)\s+/i,'').trim();
 
     offers.push({
-      id: `jysk-${slug(name)}-${price}`,
+      id:'jysk-'+slug(name)+'-'+price,
       name,
-      category: categoryFor(name),
-      store: 'jysk',
+      category:categoryFor(name),
+      store:'jysk',
       price,
       oldPrice,
-      unitLabel: current[2] ? `1 ${current[2]}` : '1 db',
-      validFrom: isoToday(),
-      validTo: isoToday(),
-      validityText: 'Ma ellenőrizve',
-      image: imageNear(html, name, source.url, placeholder('jysk', name)),
-      sourceUrl: source.url
+      unitLabel:current[2]?'1 '+current[2]:'1 db',
+      validFrom:isoToday(),
+      validTo:isoToday(),
+      validityText:'Ma ellenőrizve',
+      image:imageNear(html,name,url,placeholder('jysk',name)),
+      sourceUrl:url
     });
   }
+  return offers;
+}
 
-  return dedupe(offers).slice(0,140);
+function discoverJyskCampaignLinks(html:string,base:string){
+  const found=new Set<string>();
+  const re=/href=["']([^"']+)["']/gi;
+  let match:RegExpExecArray|null;
+  while((match=re.exec(html))){
+    const href=match[1];
+    if(!/(?:\/dcp-\d+|\/extra-[^"'?#]+|\/[^"'?#]*kedvezmeny[^"'?#]*)/i.test(href)) continue;
+    const url=absoluteUrl(href,base);
+    if(url&&url!==base) found.add(url);
+    if(found.size>=4) break;
+  }
+  return [...found];
+}
+
+async function scrapeJysk(source: RetailSource): Promise<Offer[]> {
+  const home=await fetchHtml(source.url);
+  const links=discoverJyskCampaignLinks(home,source.url);
+  const pages=await Promise.allSettled(links.map(async url=>({url,html:await fetchHtml(url)})));
+  const offers=[
+    ...parseJyskPage(home,source.url),
+    ...pages.flatMap(p=>p.status==='fulfilled'?parseJyskPage(p.value.html,p.value.url):[])
+  ];
+  return dedupe(offers).slice(0,180);
 }
 
 async function scrapeDecathlon(source: RetailSource): Promise<Offer[]> {

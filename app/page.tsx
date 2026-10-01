@@ -184,7 +184,7 @@ function HomeView({ offers, campaigns, query, setQuery, onSelect, setTab, refres
   const top = offers.slice(0, 3);
   const categories = [
     ['🥩', 'Élelmiszer'], ['🛋️', 'Lakberendezés'], ['🏃', 'Sport'], ['🛠️', 'Barkács'],
-    ['👟', 'Cipő'], ['🌿', 'Kert'], ['🧴', 'Háztartás'], ['🏷️', 'Minden akció']
+    ['👟', 'Cipő'], ['🌿', 'Kert'], ['🧴', 'Háztartás'], ['💄', 'Drogéria'], ['📺', 'Műszaki'], ['🏷️', 'Minden akció']
   ];
   return (
     <div className="screen home-screen">
@@ -371,10 +371,13 @@ function CardsView({ cards, setCards, onAdd, onOpen }: { cards: LoyaltyCard[]; s
       <div className="wallet-stack">
         {cards.map(card=>{
           const v=cardVisual(card);
-          return <button className="wallet-card" key={card.id} onClick={()=>onOpen(card)} style={{background:v.color,color:v.text}}>
-            <div className="wallet-brand"><CardBadge card={card}/><div><strong>{card.label}</strong><small>{card.code.replace(/(.{4})/g,'$1 ').trim()}</small></div></div>
-            <div className="wallet-code"><CodeDisplay value={card.code} format={card.format}/></div>
-          </button>
+          return <div className="wallet-card" key={card.id} style={{background:v.color,color:v.text}}>
+            <button className="wallet-card-open" onClick={()=>onOpen(card)} style={{color:v.text}}>
+              <div className="wallet-brand"><CardBadge card={card}/><div><strong>{card.label}</strong><small>{card.code.replace(/(.{4})/g,'$1 ').trim()}</small></div></div>
+              <div className="wallet-code"><CodeDisplay value={card.code} format={card.format}/></div>
+            </button>
+            <button className="wallet-delete" style={{color:v.text}} aria-label="Kártya törlése" onClick={()=>{if(window.confirm('Törlöd ezt a kártyát?'))setCards(prev=>prev.filter(x=>x.id!==card.id))}}><Trash2 size={16}/></button>
+          </div>
         })}
       </div>
       {!cards.length && <div className="empty"><CreditCard size={42}/><h3>Még nincs kártyád</h3><button className="primary" onClick={onAdd}><Plus size={18}/> Kártya hozzáadása</button></div>}

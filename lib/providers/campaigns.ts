@@ -125,6 +125,27 @@ async function mediaMarktCampaigns():Promise<Campaign[]>{
   return dedupe(out);
 }
 
+
+async function ikeaCampaigns():Promise<Campaign[]>{
+  const url='https://www.ikea.com/hu/hu/offers/';
+  const html=await fetchHtml(url);
+  const data=strip(html);
+  const joined=data.join(' ');
+  if(!/(?:2\s*\+\s*1|3\s*\+\s*1)/i.test(joined)) return [];
+  const range=parseRange(joined);
+  return [{
+    id:'ikea-family-combine-save',
+    store:'ikea',
+    title:'IKEA Family: kombinálj és spórolj',
+    subtitle:'2+1 és 3+1 ajánlatok kijelölt termékekre',
+    discountText:'2+1 / 3+1',
+    loyaltyOnly:true,
+    validFrom:range?.start,
+    validTo:range?.end,
+    sourceUrl:url
+  }];
+}
+
 async function obiCampaigns():Promise<Campaign[]>{
   const url='https://www.obi.hu/ajanlatok';
   const html=await fetchHtml(url);
@@ -191,6 +212,6 @@ async function praktikerCampaigns():Promise<Campaign[]>{
 }
 
 export async function collectCampaigns():Promise<Campaign[]>{
-  const results=await Promise.allSettled([obiCampaigns(),praktikerCampaigns(),dmCampaigns(),mediaMarktCampaigns()]);
+  const results=await Promise.allSettled([obiCampaigns(),praktikerCampaigns(),dmCampaigns(),mediaMarktCampaigns(),ikeaCampaigns()]);
   return results.flatMap(r=>r.status==='fulfilled'?r.value:[]);
 }

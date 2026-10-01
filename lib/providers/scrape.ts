@@ -12,7 +12,7 @@ export const retailSources: RetailSource[] = [
   { id: 'ikea', name: 'IKEA', url: 'https://www.ikea.com/hu/hu/offers/' },
   { id: 'decathlon', name: 'Decathlon', url: 'https://www.decathlon.hu/deals/decathlon-ajanlatai' },
   { id: 'obi', name: 'OBI', url: 'https://www.obi.hu/campaign/asdp_top_aras_termekek' },
-  { id: 'praktiker', name: 'Praktiker', url: 'https://www.praktiker.hu/ajanlatok' },
+  { id: 'praktiker', name: 'Praktiker', url: 'https://www.praktiker.hu/utosar/cc/3539' },
   { id: 'deichmann', name: 'Deichmann', url: 'https://www.deichmann.com/hu-hu/c/akcio-akcios-cipok-481' },
   { id: 'jysk', name: 'JYSK', url: 'https://jysk.hu/happydays' }
 ];

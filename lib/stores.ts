@@ -16,9 +16,10 @@ export const stores: Record<StoreId, { name: string; short: string; color: strin
   rossmann: { name: 'Rossmann', short: 'ROSS', color: '#e30613', text: '#ffffff', group: 'custom' },
   dm: { name: 'dm', short: 'dm', color: '#00a0df', text: '#ffffff', group: 'custom' },
   mediamarkt: { name: 'MediaMarkt', short: 'MEDIA', color: '#df0000', text: '#ffffff', group: 'custom' },
+  euronics: { name: 'Euronics', short: 'EURON', color: '#e30613', text: '#ffffff', group: 'custom' },
   custom: { name: 'Saját üzlet', short: 'SAJÁT', color: '#5b6472', text: '#ffffff', group: 'custom' }
 };
 
 export const knownStoreOrder: StoreId[] = [
-  'aldi','lidl','penny','tesco','spar','auchan','ikea','decathlon','obi','praktiker','deichmann','jysk','rossmann','dm','mediamarkt'
+  'aldi','lidl','penny','tesco','spar','auchan','ikea','decathlon','obi','praktiker','deichmann','jysk','rossmann','dm','mediamarkt','euronics'
 ];

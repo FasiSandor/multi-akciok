@@ -37,3 +37,16 @@ export type CustomRetailer = {
   color: string;
   note?: string;
 };
+
+export type Campaign = {
+  id: string;
+  store: StoreId;
+  title: string;
+  subtitle?: string;
+  discountText?: string;
+  code?: string;
+  validFrom?: string;
+  validTo?: string;
+  loyaltyOnly?: boolean;
+  sourceUrl: string;
+};

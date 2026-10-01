@@ -12,6 +12,7 @@ import { fallbackOffers } from '@/lib/fallback-offers';
 import { knownStoreOrder, stores } from '@/lib/stores';
 import { CodeDisplay } from '@/components/CodeDisplay';
 import { recordOfferHistory, readOfferHistoryStats, type HistoryStats } from '@/lib/client-history';
+import { evaluateWatchTerms, type WatchHit } from '@/lib/client-watch';
 
 type Tab = 'home' | 'search' | 'list' | 'cards' | 'profile';
 type SourceState = { id:string; name:string; url:string; ok:boolean; checkedAt:string; count:number; note?:string };
@@ -58,15 +59,20 @@ export default function Page() {
   const [refreshing, setRefreshing] = useState(false);
   const [customRetailers, setCustomRetailers] = useState<CustomRetailer[]>([]);
   const [retailerModal, setRetailerModal] = useState(false);
+  const [watchTerms, setWatchTerms] = useState<string[]>([]);
+  const [watchHits, setWatchHits] = useState<WatchHit[]>([]);
 
   useEffect(() => {
     const savedCards = localStorage.getItem('multi-akciok-cards');
     const savedList = localStorage.getItem('multi-akciok-list');
     const savedRetailers = localStorage.getItem('multi-akciok-custom-retailers');
+    const savedWatchTerms = localStorage.getItem('multi-akciok-watch-terms');
     setCards(savedCards ? JSON.parse(savedCards) : []);
     if (savedList) setListIds(JSON.parse(savedList));
     if (savedRetailers) setCustomRetailers(JSON.parse(savedRetailers));
-    refreshOffers();
+    const initialWatchTerms = savedWatchTerms ? JSON.parse(savedWatchTerms) : [];
+    setWatchTerms(initialWatchTerms);
+    refreshOffers(initialWatchTerms);
   }, []);
 
   useEffect(() => {
@@ -81,13 +87,18 @@ export default function Page() {
     localStorage.setItem('multi-akciok-custom-retailers', JSON.stringify(customRetailers));
   }, [customRetailers]);
 
-  async function refreshOffers() {
+  useEffect(() => {
+    localStorage.setItem('multi-akciok-watch-terms', JSON.stringify(watchTerms));
+    setWatchHits(evaluateWatchTerms(offers, watchTerms));
+  }, [watchTerms, offers]);
+
+  async function refreshOffers(termsOverride?: string[]) {
     setRefreshing(true);
     try {
       const res = await fetch('/api/offers', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.offers)) { setOffers(data.offers); recordOfferHistory(data.offers); }
+        if (Array.isArray(data.offers)) { setOffers(data.offers); recordOfferHistory(data.offers); setWatchHits(evaluateWatchTerms(data.offers, termsOverride ?? watchTerms)); }
         if (Array.isArray(data.sourceStates)) setSourceStates(data.sourceStates);
         setLastRefresh(data.refreshedAt || new Date().toISOString());
       }
@@ -110,7 +121,7 @@ export default function Page() {
         {selected ? (
           <OfferDetail offer={selected} allOffers={offers} onBack={() => setSelected(null)} />
         ) : tab === 'home' ? (
-          <HomeView offers={filtered} query={query} setQuery={setQuery} onSelect={setSelected} setTab={setTab} refresh={refreshOffers} refreshing={refreshing} lastRefresh={lastRefresh} customRetailers={customRetailers} onAddRetailer={() => setRetailerModal(true)} />
+          <HomeView offers={filtered} query={query} setQuery={setQuery} onSelect={setSelected} setTab={setTab} refresh={() => refreshOffers()} refreshing={refreshing} lastRefresh={lastRefresh} customRetailers={customRetailers} watchHits={watchHits} onAddRetailer={() => setRetailerModal(true)} />
         ) : tab === 'search' ? (
           <SearchView offers={filtered} query={query} setQuery={setQuery} onSelect={setSelected} />
         ) : tab === 'list' ? (
@@ -118,7 +129,7 @@ export default function Page() {
         ) : tab === 'cards' ? (
           <CardsView cards={cards} setCards={setCards} onAdd={() => setCardModal(true)} onOpen={setActiveCard} />
         ) : (
-          <ProfileView customRetailers={customRetailers} sourceStates={sourceStates} lastRefresh={lastRefresh} onAddRetailer={() => setRetailerModal(true)} onRemoveRetailer={(id) => setCustomRetailers(prev => prev.filter(x => x.id !== id))} />
+          <ProfileView customRetailers={customRetailers} sourceStates={sourceStates} lastRefresh={lastRefresh} watchTerms={watchTerms} setWatchTerms={setWatchTerms} watchHits={watchHits} onAddRetailer={() => setRetailerModal(true)} onRemoveRetailer={(id) => setCustomRetailers(prev => prev.filter(x => x.id !== id))} />
         )}
         {!selected && <BottomNav tab={tab} setTab={setTab} />}
       </section>
@@ -142,9 +153,9 @@ function BrandHeader({ onBell }: { onBell?: () => void }) {
   );
 }
 
-function HomeView({ offers, query, setQuery, onSelect, setTab, refresh, refreshing, lastRefresh, customRetailers, onAddRetailer }: {
+function HomeView({ offers, query, setQuery, onSelect, setTab, refresh, refreshing, lastRefresh, customRetailers, watchHits, onAddRetailer }: {
   offers: Offer[]; query: string; setQuery: (s: string) => void; onSelect: (o: Offer) => void; setTab: (t: Tab) => void;
-  refresh: () => void; refreshing: boolean; lastRefresh: string; customRetailers: CustomRetailer[]; onAddRetailer: () => void;
+  refresh: () => void; refreshing: boolean; lastRefresh: string; customRetailers: CustomRetailer[]; watchHits: WatchHit[]; onAddRetailer: () => void;
 }) {
   const top = offers.slice(0, 3);
   const categories = [
@@ -155,6 +166,7 @@ function HomeView({ offers, query, setQuery, onSelect, setTab, refresh, refreshi
     <div className="screen home-screen">
       <BrandHeader />
       <div className="searchbox"><Search size={19} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Keress terméket, márkát vagy üzletet..." /></div>
+      {watchHits.length>0&&<div className="watch-banner"><div className="watch-banner-head"><Bell size={16}/><strong>Figyelt ajánlatok</strong><span>{watchHits.length}</span></div>{watchHits.slice(0,2).map(hit=><button key={hit.term} onClick={()=>onSelect(hit.offer)}><div><b>{hit.term}</b><small>{hit.status==='lower'?'Olcsóbb lett':hit.status==='new'?'Új találat':'Aktuális találat'} · {stores[hit.offer.store].name}</small></div><strong>{money(hit.offer.price)}</strong><ChevronRight size={16}/></button>)}</div>}
       <div className="stores-row">
         {storeOrder.map(s => <div className="store-chip" key={s}><StoreBadge store={s} /><span>{stores[s].name}</span></div>)}
         {customRetailers.map(r => <button className="store-chip custom-store-chip" key={r.id} onClick={() => r.url && window.open(r.url, '_blank', 'noopener,noreferrer')}><span className="custom-store-badge" style={{background:r.color}}>{r.name.slice(0,6).toUpperCase()}</span><span>{r.name}</span></button>)}
@@ -411,7 +423,7 @@ function FullCard({ card, onClose }: { card:LoyaltyCard; onClose:()=>void }) {
   return <div className="full-card-screen"><div className="full-card-top"><button className="icon-btn" onClick={onClose}><X/></button><span>Pénztári nézet</span></div><div className="full-card-brand" style={{background:s.color,color:s.text}}><StoreBadge store={card.store}/><h1>{card.label}</h1><p>{card.code}</p></div><div className="full-code"><CodeDisplay value={card.code} format={card.format} large/></div><p className="brightness-note">☀️ A képernyőt tartsd a leolvasó elé.</p></div>
 }
 
-function ProfileView({customRetailers,sourceStates,lastRefresh,onAddRetailer,onRemoveRetailer}:{customRetailers:CustomRetailer[];sourceStates:SourceState[];lastRefresh:string;onAddRetailer:()=>void;onRemoveRetailer:(id:string)=>void}){return <div className="screen profile-screen"><BrandHeader/><div className="profile-hero"><div className="avatar"><UserRound/></div><h1>MULTI AKCIÓK</h1><p>Saját bevásárlási asszisztens</p></div><div className="settings-list"><button><Heart/> Figyelőlista <ChevronRight/></button><button><Bell/> Értesítések <ChevronRight/></button><button><Tag/> Árhistorika <ChevronRight/></button><button onClick={onAddRetailer}><Plus/> Üzlet / forrás hozzáadása <ChevronRight/></button></div><div className="source-panel"><div className="section-title"><h2>Mai adatforrások</h2><small>{lastRefresh?new Date(lastRefresh).toLocaleTimeString('hu-HU',{hour:'2-digit',minute:'2-digit'}):''}</small></div>{sourceStates.map(s=><div className="source-row" key={s.id}><span className={s.ok&&s.count>0?'source-dot ok':s.ok?'source-dot warn':'source-dot bad'}/><div><b>{s.name}</b><small>{s.count>0?`${s.count} ajánlat`:s.note||'Nincs adat'}</small></div><a href={s.url} target="_blank" rel="noreferrer"><ExternalLink size={15}/></a></div>)}</div>{customRetailers.length>0&&<div className="custom-retailers-panel"><div className="section-title"><h2>Saját üzletek</h2></div>{customRetailers.map(r=><div className="custom-retailer-row" key={r.id}><span style={{background:r.color}}>{r.name.slice(0,2).toUpperCase()}</span><div><b>{r.name}</b><small>{r.url||'Saját üzlet'}</small></div><button onClick={()=>onRemoveRetailer(r.id)} aria-label="Törlés"><Trash2 size={17}/></button></div>)}</div>}</div>}
+function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWatchTerms,watchHits,onAddRetailer,onRemoveRetailer}:{customRetailers:CustomRetailer[];sourceStates:SourceState[];lastRefresh:string;watchTerms:string[];setWatchTerms:Dispatch<SetStateAction<string[]>>;watchHits:WatchHit[];onAddRetailer:()=>void;onRemoveRetailer:(id:string)=>void}){const [watchInput,setWatchInput]=useState('');function addWatch(){const value=watchInput.trim();if(!value)return;setWatchTerms(prev=>prev.some(x=>x.toLocaleLowerCase('hu')===value.toLocaleLowerCase('hu'))?prev:[...prev,value]);setWatchInput('');}return <div className="screen profile-screen"><BrandHeader/><div className="profile-hero"><div className="avatar"><UserRound/></div><h1>MULTI AKCIÓK</h1><p>Saját bevásárlási asszisztens</p></div><div className="settings-list"><button><Heart/> Figyelőlista <ChevronRight/></button><button><Bell/> Értesítések <ChevronRight/></button><button><Tag/> Árhistorika <ChevronRight/></button><button onClick={onAddRetailer}><Plus/> Üzlet / forrás hozzáadása <ChevronRight/></button></div><div className="watch-panel"><div className="section-title"><h2>Figyelőlista</h2><small>{watchTerms.length} figyelés</small></div><div className="watch-input"><input value={watchInput} onChange={e=>setWatchInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addWatch()}} placeholder="pl. vaj, lazac, futócipő"/><button onClick={addWatch}><Plus size={17}/></button></div>{watchTerms.length===0?<p className="watch-empty">Adj hozzá terméket vagy márkát, és frissítéskor megkeressük a legjobb aktuális ajánlatot.</p>:<div className="watch-chips">{watchTerms.map(term=>{const hit=watchHits.find(x=>x.term===term);return <div className="watch-chip" key={term}><div><b>{term}</b><small>{hit?stores[hit.offer.store].name+' · '+money(hit.offer.price):'Nincs aktuális találat'}</small></div><button onClick={()=>setWatchTerms(prev=>prev.filter(x=>x!==term))}><X size={14}/></button></div>})}</div>}</div><div className="source-panel"><div className="section-title"><h2>Mai adatforrások</h2><small>{lastRefresh?new Date(lastRefresh).toLocaleTimeString('hu-HU',{hour:'2-digit',minute:'2-digit'}):''}</small></div>{sourceStates.map(s=><div className="source-row" key={s.id}><span className={s.ok&&s.count>0?'source-dot ok':s.ok?'source-dot warn':'source-dot bad'}/><div><b>{s.name}</b><small>{s.count>0?`${s.count} ajánlat`:s.note||'Nincs adat'}</small></div><a href={s.url} target="_blank" rel="noreferrer"><ExternalLink size={15}/></a></div>)}</div>{customRetailers.length>0&&<div className="custom-retailers-panel"><div className="section-title"><h2>Saját üzletek</h2></div>{customRetailers.map(r=><div className="custom-retailer-row" key={r.id}><span style={{background:r.color}}>{r.name.slice(0,2).toUpperCase()}</span><div><b>{r.name}</b><small>{r.url||'Saját üzlet'}</small></div><button onClick={()=>onRemoveRetailer(r.id)} aria-label="Törlés"><Trash2 size={17}/></button></div>)}</div>}</div>}
 
 function BottomNav({tab,setTab}:{tab:Tab;setTab:(t:Tab)=>void}){
   const items:[Tab,ReactNode,string][]=[['home',<Home key="h"/>,'Kezdőlap'],['search',<Search key="s"/>,'Keresés'],['list',<ListChecks key="l"/>,'Lista'],['cards',<CreditCard key="c"/>,'Kártyák'],['profile',<UserRound key="p"/>,'Profil']];

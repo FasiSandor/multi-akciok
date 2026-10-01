@@ -478,6 +478,47 @@ async function scrapeTesco(source: RetailSource): Promise<Offer[]> {
 
 
 
+
+function parsePraktikerPage(html:string,url:string):Offer[]{
+  const data=lines(html);
+  const offers:Offer[]=[];
+  for(let i=0;i<data.length-2;i++){
+    if(!/^\d{6}$/.test(data[i+1])) continue;
+    const name=data[i].trim();
+    if(name.length<3||name.length>190||/Kosárba|Szállítás|Készleten|Rendezés|termék$/i.test(name)) continue;
+    const after=data.slice(i+2,i+10);
+    const priceLine=after.find(x=>/^\s*[\d.]+\s*Ft\s*\/\s*(darab|m2|m²|csomag|tekercs|l|kg)\b/i.test(x));
+    if(!priceLine) continue;
+    const pm=priceLine.match(/^\s*([\d.]+)\s*Ft\s*\/\s*(darab|m2|m²|csomag|tekercs|l|kg)\b/i);
+    if(!pm) continue;
+    const price=number(pm[1]);
+    if(!price||price>1_500_000) continue;
+    const unit=pm[2].toLowerCase();
+    const unitLabel=unit==='darab'?'1 db':unit==='m2'||unit==='m²'?'1 m²':'1 '+unit;
+    offers.push({
+      id:'praktiker-'+slug(name)+'-'+price,
+      name,
+      category:categoryFor(name),
+      store:'praktiker',
+      price,
+      unitLabel,
+      unitPrice:price,
+      validFrom:isoToday(),
+      validTo:isoFuture(30),
+      image:imageNear(html,name,url,placeholder('praktiker',name)),
+      sourceUrl:url
+    });
+  }
+  return offers;
+}
+
+async function scrapePraktiker(source:RetailSource):Promise<Offer[]>{
+  const urls=[source.url,'https://www.praktiker.hu/kiarusitas/bfd'];
+  const pages=await Promise.allSettled(urls.map(async url=>({url,html:await fetchHtml(url)})));
+  const offers=pages.flatMap(p=>p.status==='fulfilled'?parsePraktikerPage(p.value.html,p.value.url):[]);
+  return dedupe(offers).slice(0,220);
+}
+
 function obiUnitPriceToPack(name:string,value:number,unit:string){
   const normalized=unit.toLocaleLowerCase('hu').replace('liter','l').replace('darab','db').replace('kg','kg');
   if(normalized==='db') return Math.round(value);
@@ -682,6 +723,7 @@ export async function scrapeSpecialRetailer(source: RetailSource): Promise<Offer
   if (source.id === 'lidl') return scrapeLidl(source);
   if (source.id === 'penny') return scrapePenny(source);
   if (source.id === 'tesco') return scrapeTesco(source);
+  if (source.id === 'praktiker') return scrapePraktiker(source);
   if (source.id === 'obi') return scrapeObi(source);
   if (source.id === 'ikea') return scrapeIkea(source);
   if (source.id === 'decathlon') return scrapeDecathlon(source);

@@ -49,7 +49,9 @@ function categoryFor(name: string) {
   if (/fúr|csavar|szerszám|fűnyíró|festék|laminált|csempe|burkolat|tömlő|medence/.test(s)) return 'Barkács';
   if (/ágy|matrac|szék|asztal|szekrény|polc|lámpa|paplan|párna|szőnyeg|függöny/.test(s)) return 'Otthon · Lakberendezés';
   if (/kert|kerti|kaspó|virágláda/.test(s)) return 'Otthon · Kert';
+  if (/sampon|balzsam|dezodor|parfüm|tusfürdő|krém|kozmet|szempilla|rúzs|fogkrém|pelenka|törlőkendő|hajfesték|vitamin/.test(s)) return 'Drogéria';
   if (/mosó|öblítő|tisztító|papír|mécses|kapszula/.test(s)) return 'Háztartás';
+  if (/tv|televízió|telefon|okosóra|laptop|notebook|tablet|porszívó|hűtő|mosógép|szárítógép|fejhallgató/.test(s)) return 'Műszaki';
   return 'Egyéb';
 }
 
@@ -479,6 +481,50 @@ async function scrapeTesco(source: RetailSource): Promise<Offer[]> {
 
 
 
+
+async function scrapeRossmann(source:RetailSource):Promise<Offer[]>{
+  const html=await fetchHtml(source.url);
+  const data=lines(html);
+  const offers:Offer[]=[];
+
+  for(let i=0;i<data.length;i++){
+    const promo=data[i].match(/^(\d{1,2})%\s+KEDVEZMÉNY\s+(.+)$/i);
+    if(!promo) continue;
+    const name=promo[2].trim();
+    if(name.length<3||name.length>190) continue;
+
+    const after=data.slice(i+1,i+16);
+    const oldIndex=after.findIndex(x=>/Ft.*helyett/i.test(x));
+    if(oldIndex<0) continue;
+    const oldMatch=after[oldIndex].match(/([\d\s.]+)\s*Ft/i);
+    if(!oldMatch) continue;
+    const oldPrice=number(oldMatch[1]);
+    const currentLine=after.slice(oldIndex+1).find(x=>/^\s*[\d\s.]+\s*Ft\s*$/i.test(x));
+    if(!currentLine) continue;
+    const price=number(currentLine);
+    if(!price||!oldPrice||price>=oldPrice) continue;
+
+    const unitLine=after.slice(oldIndex+1).find(x=>/Ft\s*\/(?:l|kg|db|100\s*ml|100\s*g)/i.test(x));
+    const unitPrice=unitLine?number(unitLine):undefined;
+
+    offers.push({
+      id:'rossmann-'+slug(name)+'-'+price,
+      name,
+      category:categoryFor(name),
+      store:'rossmann',
+      price,
+      oldPrice,
+      unitLabel:unitFrom([name]),
+      unitPrice,
+      validFrom:isoToday(),
+      validTo:isoToday(),
+      image:imageNear(html,name,source.url,placeholder('rossmann',name)),
+      sourceUrl:source.url
+    });
+  }
+  return dedupe(offers).slice(0,220);
+}
+
 function parsePraktikerPage(html:string,url:string):Offer[]{
   const data=lines(html);
   const offers:Offer[]=[];
@@ -723,6 +769,7 @@ export async function scrapeSpecialRetailer(source: RetailSource): Promise<Offer
   if (source.id === 'lidl') return scrapeLidl(source);
   if (source.id === 'penny') return scrapePenny(source);
   if (source.id === 'tesco') return scrapeTesco(source);
+  if (source.id === 'rossmann') return scrapeRossmann(source);
   if (source.id === 'praktiker') return scrapePraktiker(source);
   if (source.id === 'obi') return scrapeObi(source);
   if (source.id === 'ikea') return scrapeIkea(source);

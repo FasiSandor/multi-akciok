@@ -230,8 +230,8 @@ function OfferCard({ offer, onClick }: { offer: Offer; onClick: () => void }) {
       <div className="offer-img"><Image src={offer.image} alt={offer.name} fill sizes="30vw" /></div>
       <strong>{offer.name}</strong><small>{offer.unitLabel}</small>
       <b>{money(offer.price)}</b>{offer.oldPrice && <del>{money(offer.oldPrice)}</del>}
-      <span className="unit-price">{offer.unitPrice ? `${money(offer.unitPrice)}/kg` : ' '}</span>
-      <div className="offer-foot"><StoreBadge store={offer.store} compact/><span>{new Date(offer.validTo).toLocaleDateString('hu-HU',{month:'short',day:'numeric'})}-ig</span><Heart size={17}/></div>
+      <span className="unit-price">{offer.unitPrice ? `${money(offer.unitPrice)}${offer.unitPriceLabel||''}` : ' '}</span>
+      <div className="offer-foot"><StoreBadge store={offer.store} compact/><span>{offer.validityText||`${new Date(offer.validTo).toLocaleDateString('hu-HU',{month:'short',day:'numeric'})}-ig`}</span><Heart size={17}/></div>
     </button>
   );
 }
@@ -248,7 +248,7 @@ function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; qu
       <div className="results-list">
         {visible.map(o => <button className="result-card" key={o.id} onClick={()=>onSelect(o)}>
           <div className="result-image"><Image src={o.image} alt={o.name} fill sizes="88px"/></div>
-          <div className="result-main"><div className="result-top"><StoreBadge store={o.store} compact/>{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><strong>{o.name}</strong><small>{o.unitLabel} · {o.category}</small></div>
+          <div className="result-main"><div className="result-top"><StoreBadge store={o.store} compact/>{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><strong>{o.name}</strong><small>{o.unitLabel} · {o.category}{o.unitPrice?` · ${money(o.unitPrice)}${o.unitPriceLabel||''}`:''}</small></div>
           <div className="result-price"><b>{money(o.price)}</b>{o.oldPrice&&<del>{money(o.oldPrice)}</del>}<ChevronRight size={18}/></div>
         </button>)}
       </div>

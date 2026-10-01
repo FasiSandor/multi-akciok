@@ -1,0 +1,18 @@
+{
+  "name": "MULTI AKCIÓK",
+  "short_name": "Akciók",
+  "description": "Magyar üzletek aktuális akciói, ár-összehasonlítás és digitális hűségkártyák.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0b2545",
+  "lang": "hu",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

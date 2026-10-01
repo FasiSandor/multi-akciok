@@ -1,4 +1,3 @@
-import * as cheerio from 'cheerio';
 import type { Offer, StoreId } from '@/lib/types';
 
 export type RetailSource = { id: Exclude<StoreId,'custom'>; name: string; url: string };
@@ -18,109 +17,253 @@ export const retailSources: RetailSource[] = [
   { id: 'jysk', name: 'JYSK', url: 'https://jysk.hu/' }
 ];
 
-function clean(s: string) { return s.replace(/\s+/g, ' ').replace(/ /g, ' ').trim(); }
-function num(s: string) { return Number(s.replace(/[ .]/g, '')); }
-function slug(s: string) { return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60); }
-function future(days=7){ const d=new Date(); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10); }
-function today(){ return new Date().toISOString().slice(0,10); }
+function clean(value: string) {
+  return decodeEntities(value).replace(/\s+/g, ' ').trim();
+}
+
+function decodeEntities(value: string) {
+  return value
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+}
+
+function num(value: string) {
+  return Number(value.replace(/[^\d]/g, ''));
+}
+
+function slug(value: string) {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 60);
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function future(days = 7) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 function categoryFor(name: string) {
-  const s=name.toLowerCase();
-  if(/csirke|sertés|marha|hús|sonka|szalámi|kolbász|hal|lazac/.test(s)) return 'Élelmiszer · Hús';
-  if(/tej|sajt|vaj|joghurt|tejföl|tojás|túró/.test(s)) return 'Élelmiszer · Tejtermék';
-  if(/alma|banán|paradicsom|paprika|uborka|szőlő|áfonya|avokádó|zöldség|gyümölcs|tök/.test(s)) return 'Élelmiszer · Zöldség-gyümölcs';
-  if(/kenyér|zsemle|kifli|pogácsa|péks/.test(s)) return 'Élelmiszer · Pékáru';
-  if(/víz|üdítő|kávé|tea|ital|sör|bor/.test(s)) return 'Élelmiszer · Ital';
-  if(/cipő|sneaker|csizma|szandál|papucs|bakancs/.test(s)) return 'Divat · Cipő';
-  if(/kerékpár|futó|fitness|fitnesz|sport|sátor|horgász|labda|roller|túra/.test(s)) return 'Sport';
-  if(/fúr|csavar|szerszám|fűnyíró|festék|laminált|csempe|burkolat|tömlő|medence/.test(s)) return 'Barkács';
-  if(/ágy|matrac|szék|asztal|szekrény|polc|lámpa|paplan|párna|szőnyeg|függöny/.test(s)) return 'Otthon · Lakberendezés';
-  if(/kert|kerti|kaspó|virágláda/.test(s)) return 'Otthon · Kert';
-  if(/mosó|öblítő|tisztító|papír|mécses/.test(s)) return 'Háztartás';
+  const s = name.toLowerCase();
+  if (/csirke|sertés|marha|hús|sonka|szalámi|kolbász|hal|lazac/.test(s)) return 'Élelmiszer · Hús';
+  if (/tej|sajt|vaj|joghurt|tejföl|tojás|túró/.test(s)) return 'Élelmiszer · Tejtermék';
+  if (/alma|banán|paradicsom|paprika|uborka|szőlő|áfonya|avokádó|zöldség|gyümölcs|tök/.test(s)) return 'Élelmiszer · Zöldség-gyümölcs';
+  if (/kenyér|zsemle|kifli|pogácsa|péks/.test(s)) return 'Élelmiszer · Pékáru';
+  if (/víz|üdítő|kávé|tea|ital|sör|bor/.test(s)) return 'Élelmiszer · Ital';
+  if (/cipő|sneaker|csizma|szandál|papucs|bakancs/.test(s)) return 'Divat · Cipő';
+  if (/kerékpár|futó|fitness|fitnesz|sport|sátor|horgász|labda|roller|túra/.test(s)) return 'Sport';
+  if (/fúr|csavar|szerszám|fűnyíró|festék|laminált|csempe|burkolat|tömlő|medence/.test(s)) return 'Barkács';
+  if (/ágy|matrac|szék|asztal|szekrény|polc|lámpa|paplan|párna|szőnyeg|függöny/.test(s)) return 'Otthon · Lakberendezés';
+  if (/kert|kerti|kaspó|virágláda/.test(s)) return 'Otthon · Kert';
+  if (/mosó|öblítő|tisztító|papír|mécses/.test(s)) return 'Háztartás';
   return 'Egyéb';
 }
 
 function unitLabelFrom(text: string) {
-  const m=text.match(/\b(\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|db|darab|csomag|pár))\b/i);
+  const m = text.match(/\b(\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|db|darab|csomag|pár))\b/i);
   return m ? clean(m[1]) : '1 db';
 }
 
-function parsePrices(text: string, source: StoreId) {
-  const all=[...text.matchAll(/(\d{1,3}(?:[ .]\d{3})*|\d+)\s*Ft\b/gi)].map(m=>num(m[1])).filter(n=>n>10 && n<2000000);
-  if(!all.length) return null;
-  let price=all[0], oldPrice: number|undefined, loyaltyOnly=false;
-
-  const club=text.match(/(\d{1,3}(?:[ .]\d{3})*|\d+)\s*Ft\s*(?:Clubcarddal|kártyával)/i);
-  if(club){ price=num(club[1]); loyaltyOnly=true; const larger=all.find(n=>n>price); if(larger) oldPrice=larger; }
-
-  if(source==='penny'){
-    const card=text.match(/PENNY\s*Kártyával\s*(\d{1,3}(?:[ .]\d{3})*|\d+)\s*Ft/i);
-    const without=text.match(/PENNY\s*Kártya\s*nélkül\s*(\d{1,3}(?:[ .]\d{3})*|\d+)\s*Ft/i);
-    if(card){price=num(card[1]);loyaltyOnly=true;if(without)oldPrice=num(without[1]);}
+function asAbsoluteUrl(raw: unknown, base: string) {
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  try {
+    return new URL(raw, base).toString();
+  } catch {
+    return undefined;
   }
-
-  const previous=text.match(/(?:korábbi ár|előző ár)\s*(\d{1,3}(?:[ .]\d{3})*|\d+)\s*Ft/i);
-  if(previous){
-    oldPrice=num(previous[1]);
-    const after=text.slice((previous.index||0)+previous[0].length);
-    const current=after.match(/(\d{1,3}(?:[ .]\d{3})*|\d+)\s*Ft\b/i);
-    if(current) price=num(current[1]);
-    if(price===oldPrice){ const lower=all.find(n=>n<oldPrice!); if(lower) price=lower; }
-  }
-
-  if(!oldPrice){
-    const bigger=all.find((n,i)=>i>0 && n>price && n<price*4);
-    if(bigger) oldPrice=bigger;
-    const lower=all.find((n,i)=>i>0 && n<price && n>price*.15);
-    if(lower && !oldPrice){oldPrice=price;price=lower;}
-  }
-  return {price,oldPrice,loyaltyOnly};
 }
 
-function imageFrom($: cheerio.CheerioAPI, node: any, base: string){
-  const img=$(node).find('img').first();
-  const raw=img.attr('src')||img.attr('data-src')||img.attr('data-original')||img.attr('srcset')?.split(' ')[0]||'';
-  if(!raw) return 'https://images.unsplash.com/photo-1472851294608-062f824d29cc?auto=format&fit=crop&w=640&q=80';
-  try{return new URL(raw,base).toString()}catch{return raw}
+function priceFrom(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value);
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.replace(/\s/g, '').replace(',', '.');
+  const n = Number(normalized.replace(/[^\d.]/g, ''));
+  return Number.isFinite(n) ? Math.round(n) : undefined;
+}
+
+function imageFromProduct(product: Record<string, unknown>, base: string) {
+  const raw = product.image;
+  if (Array.isArray(raw)) return asAbsoluteUrl(raw[0], base);
+  if (raw && typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>;
+    return asAbsoluteUrl(obj.url ?? obj.contentUrl, base);
+  }
+  return asAbsoluteUrl(raw, base);
+}
+
+function validPrice(n: number | undefined) {
+  return !!n && n >= 30 && n <= 1_500_000;
+}
+
+function productToOffer(product: Record<string, unknown>, source: RetailSource): Offer | null {
+  const type = product['@type'];
+  const isProduct = type === 'Product' || (Array.isArray(type) && type.includes('Product'));
+  if (!isProduct) return null;
+
+  const name = clean(String(product.name ?? ''));
+  if (name.length < 2 || name.length > 180) return null;
+
+  const offerRaw = Array.isArray(product.offers) ? product.offers[0] : product.offers;
+  const offer = offerRaw && typeof offerRaw === 'object' ? offerRaw as Record<string, unknown> : {};
+  const price = priceFrom(offer.price ?? offer.lowPrice ?? product.price);
+  if (!validPrice(price)) return null;
+
+  const oldPrice = priceFrom(
+    offer.highPrice ??
+    offer.priceBeforeDiscount ??
+    offer.listPrice ??
+    product.highPrice
+  );
+
+  const image =
+    imageFromProduct(product, source.url) ??
+    'https://images.unsplash.com/photo-1472851294608-062f824d29cc?auto=format&fit=crop&w=640&q=80';
+
+  const validToRaw = offer.priceValidUntil;
+  const validTo =
+    typeof validToRaw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(validToRaw)
+      ? validToRaw.slice(0, 10)
+      : future(7);
+
+  return {
+    id: `${source.id}-${slug(name)}-${price}`,
+    name,
+    category: categoryFor(name),
+    store: source.id,
+    price: price!,
+    oldPrice: validPrice(oldPrice) && oldPrice! > price! ? oldPrice : undefined,
+    unitLabel: unitLabelFrom(name),
+    validFrom: today(),
+    validTo,
+    image,
+    sourceUrl: source.url
+  };
+}
+
+function walkJson(value: unknown, source: RetailSource, out: Offer[], seen: Set<string>) {
+  if (!value) return;
+  if (Array.isArray(value)) {
+    for (const item of value) walkJson(item, source, out, seen);
+    return;
+  }
+  if (typeof value !== 'object') return;
+
+  const obj = value as Record<string, unknown>;
+  const parsed = productToOffer(obj, source);
+  if (parsed && !seen.has(parsed.id)) {
+    seen.add(parsed.id);
+    out.push(parsed);
+  }
+
+  for (const child of Object.values(obj)) {
+    if (child && typeof child === 'object') walkJson(child, source, out, seen);
+  }
+}
+
+function parseJsonLd(html: string, source: RetailSource, seen: Set<string>) {
+  const offers: Offer[] = [];
+  const re = /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html))) {
+    const raw = match[1].trim();
+    if (!raw) continue;
+    try {
+      walkJson(JSON.parse(raw), source, offers, seen);
+    } catch {
+      // Some sites emit malformed JSON-LD. Ignore that block and continue.
+    }
+  }
+  return offers;
+}
+
+function stripHtml(html: string) {
+  return decodeEntities(
+    html
+      .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<(?:br|\/p|\/div|\/li|\/h\d)[^>]*>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+  )
+    .split(/\n+/)
+    .map(clean)
+    .filter(Boolean);
+}
+
+function parseTextFallback(html: string, source: RetailSource, seen: Set<string>) {
+  const lines = stripHtml(html);
+  const offers: Offer[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const priceMatch = line.match(/(?:^|\s)(\d{2,3}(?:[ .]\d{3})*|\d{2,7})\s*Ft\b/i);
+    if (!priceMatch) continue;
+
+    const price = num(priceMatch[1]);
+    if (!validPrice(price)) continue;
+
+    const context = lines.slice(Math.max(0, i - 3), Math.min(lines.length, i + 3));
+    const name = context
+      .filter(x => !/\bFt\b/i.test(x))
+      .filter(x => x.length >= 3 && x.length <= 120)
+      .find(x => !/akció|ajánlat|kedvezmény|kosár|bejelentkezés|cookie|szállítás/i.test(x));
+
+    if (!name) continue;
+
+    const id = `${source.id}-${slug(name)}-${price}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+
+    const oldMatch = context.join(' ').match(/(?:régi|eredeti|korábbi|előző)\s*(?:ár)?\D{0,12}(\d{2,3}(?:[ .]\d{3})*|\d{2,7})\s*Ft/i);
+    const oldPrice = oldMatch ? num(oldMatch[1]) : undefined;
+
+    offers.push({
+      id,
+      name,
+      category: categoryFor(name),
+      store: source.id,
+      price,
+      oldPrice: validPrice(oldPrice) && oldPrice! > price ? oldPrice : undefined,
+      unitLabel: unitLabelFrom(context.join(' ')),
+      validFrom: today(),
+      validTo: future(7),
+      image: 'https://images.unsplash.com/photo-1472851294608-062f824d29cc?auto=format&fit=crop&w=640&q=80',
+      sourceUrl: source.url
+    });
+
+    if (offers.length >= 80) break;
+  }
+
+  return offers;
 }
 
 export async function scrapeRetailer(source: RetailSource): Promise<Offer[]> {
-  const response=await fetch(source.url,{headers:{'user-agent':'Mozilla/5.0 (compatible; MultiAkciok/1.0; +https://vercel.app)','accept-language':'hu-HU,hu;q=0.9,en;q=0.7'},next:{revalidate:60*60*12},signal:AbortSignal.timeout(12000)});
-  if(!response.ok) throw new Error(`HTTP ${response.status}`);
-  const html=await response.text();
-  const $=cheerio.load(html);
-  const offers: Offer[]=[];
-  const seen=new Set<string>();
-
-  $('h2,h3,h4,[data-testid*=product] [class*=title],[class*=product] h2,[class*=product] h3').each((_,heading)=>{
-    const name=clean($(heading).text());
-    if(name.length<3||name.length>150||/ajánlat|akció|kategória|szűrés|termékek|heti|aktuális|rendezés/i.test(name)) return;
-    let node: any = heading;
-    let text='';
-    for(let i=0;i<7;i++){
-      const parent=$(node).parent().get(0); if(!parent) break; node=parent; text=clean($(node).text());
-      if(/\d[\d .]*\s*Ft\b/i.test(text) && text.length<2200) break;
-    }
-    const parsed=parsePrices(text,source.id); if(!parsed) return;
-    if(parsed.price<30 || parsed.price>1500000) return;
-    const key=`${source.id}-${slug(name)}-${parsed.price}`; if(seen.has(key)) return; seen.add(key);
-    const unit=unitLabelFrom(text);
-    const unitMatch=text.match(/(\d{1,3}(?:[ .]\d{3})*|\d+)\s*Ft\s*\/\s*(?:1\s*)?(?:kg|l|db)/i);
-    offers.push({
-      id:key,
-      name,
-      category:categoryFor(name),
-      store:source.id,
-      price:parsed.price,
-      oldPrice:parsed.oldPrice,
-      unitLabel:unit,
-      unitPrice:unitMatch?num(unitMatch[1]):undefined,
-      validFrom:today(),
-      validTo:future(7),
-      image:imageFrom($,node,source.url),
-      loyaltyOnly:parsed.loyaltyOnly,
-      sourceUrl:source.url
-    });
+  const response = await fetch(source.url, {
+    headers: {
+      'user-agent': 'Mozilla/5.0 (compatible; MultiAkciok/1.0)',
+      'accept-language': 'hu-HU,hu;q=0.9,en;q=0.7'
+    },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(12_000)
   });
-  return offers.slice(0,80);
+
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+  const html = await response.text();
+  const seen = new Set<string>();
+  const structured = parseJsonLd(html, source, seen);
+  if (structured.length) return structured.slice(0, 80);
+  return parseTextFallback(html, source, seen).slice(0, 80);
 }

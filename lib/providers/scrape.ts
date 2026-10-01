@@ -255,7 +255,7 @@ export async function scrapeRetailer(source: RetailSource): Promise<Offer[]> {
       'user-agent': 'Mozilla/5.0 (compatible; MultiAkciok/1.0)',
       'accept-language': 'hu-HU,hu;q=0.9,en;q=0.7'
     },
-    cache: 'no-store',
+    next: { revalidate: 3600 },
     signal: AbortSignal.timeout(12_000)
   });
 

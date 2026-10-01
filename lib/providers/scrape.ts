@@ -135,10 +135,8 @@ function productToOffer(product: Record<string, unknown>, source: RetailSource):
     'https://images.unsplash.com/photo-1472851294608-062f824d29cc?auto=format&fit=crop&w=640&q=80';
 
   const validToRaw = offer.priceValidUntil;
-  const validTo =
-    typeof validToRaw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(validToRaw)
-      ? validToRaw.slice(0, 10)
-      : future(7);
+  const hasExactValidity = typeof validToRaw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(validToRaw);
+  const validTo = hasExactValidity ? String(validToRaw).slice(0, 10) : today();
 
   return {
     id: `${source.id}-${slug(name)}-${price}`,
@@ -150,6 +148,7 @@ function productToOffer(product: Record<string, unknown>, source: RetailSource):
     unitLabel: unitLabelFrom(name),
     validFrom: today(),
     validTo,
+    validityText: hasExactValidity ? undefined : 'Ma ellenőrizve',
     image,
     sourceUrl: source.url
   };
@@ -240,7 +239,8 @@ function parseTextFallback(html: string, source: RetailSource, seen: Set<string>
       oldPrice: validPrice(oldPrice) && oldPrice! > price ? oldPrice : undefined,
       unitLabel: unitLabelFrom(context.join(' ')),
       validFrom: today(),
-      validTo: future(7),
+      validTo: today(),
+      validityText: 'Ma ellenőrizve',
       image: 'https://images.unsplash.com/photo-1472851294608-062f824d29cc?auto=format&fit=crop&w=640&q=80',
       sourceUrl: source.url
     });

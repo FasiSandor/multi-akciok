@@ -823,6 +823,76 @@ async function scrapeDecathlon(source: RetailSource): Promise<Offer[]> {
 }
 
 
+
+function sparMoneyNumber(value:string){
+  const n=Number(value.replace(/\s/g,'').replace(/\./g,'').replace(',','.'));
+  return Number.isFinite(n)?n:undefined;
+}
+
+function sparPackPrice(rate:number,rateUnit:string,qty:number,qtyUnit:string){
+  const ru=rateUnit.toLowerCase();
+  const qu=qtyUnit.toLowerCase();
+  if(ru==='kg'&&qu==='g') return Math.round(rate*qty/1000);
+  if(ru==='kg'&&qu==='kg') return Math.round(rate*qty);
+  if(ru==='l'&&qu==='ml') return Math.round(rate*qty/1000);
+  if(ru==='l'&&qu==='l') return Math.round(rate*qty);
+  if(ru==='db'&&qu==='db') return Math.round(rate*qty);
+  return undefined;
+}
+
+async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
+  const html=await fetchHtml(source.url);
+  const data=lines(html);
+  const header=data.find(x=>/Aktuális ajánlataink/i.test(x));
+  const range=header?parseMonthDayRange(header):undefined;
+  const offers:Offer[]=[];
+
+  for(let i=0;i<data.length;i++){
+    const name=data[i].trim();
+    if(name.length<3||name.length>170) continue;
+    if(/Aktuális ajánlataink|Lapozd át|Sárga árcímkés|SPAR márkás|MySPAR|kupon|kedvezmény|Keresd őket|Ajánlatunk|Image/i.test(name)) continue;
+    if(/^\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|db)(?:\/doboz)?$/i.test(name)) continue;
+
+    const after=data.slice(i+1,i+8);
+    const unitIndex=after.findIndex(x=>/\([\d\s.]+(?:,\d+)?\s*Ft\/1\s*(kg|l|db)\)/i.test(x));
+    if(unitIndex<0) continue;
+    const beforeUnit=after.slice(0,unitIndex+1);
+    if(beforeUnit.some(x=>/\d+\s*db-tól|\d+\s*db-tol/i.test(x))) continue;
+
+    const rateLine=after[unitIndex];
+    const rateMatch=rateLine.match(/\(([\d\s.]+(?:,\d+)?)\s*Ft\/1\s*(kg|l|db)\)/i);
+    if(!rateMatch) continue;
+    const rate=sparMoneyNumber(rateMatch[1]);
+    if(!rate||rate<=0) continue;
+
+    const quantityText=[name,...after.slice(0,unitIndex)].join(' ');
+    const q=quantityText.match(/(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l)\b/i) ||
+      quantityText.match(/(\d+)\s*db(?:\/doboz)?\b/i);
+    if(!q) continue;
+    const qty=Number(q[1].replace(',','.'));
+    const qtyUnit=q[2].toLowerCase();
+    const price=sparPackPrice(rate,rateMatch[2],qty,qtyUnit);
+    if(!price||price<30||price>1_500_000) continue;
+
+    offers.push({
+      id:'spar-'+slug(name)+'-'+price,
+      name,
+      category:categoryFor(name),
+      store:'spar',
+      price,
+      unitLabel:q[1].replace('.',',')+' '+qtyUnit,
+      unitPrice:Math.round(rate),
+      unitPriceLabel:'/'+rateMatch[2].toLowerCase(),
+      validFrom:range?.start??isoToday(),
+      validTo:range?.end??isoToday(),
+      validityText:range?undefined:'Ma ellenőrizve',
+      image:imageNear(html,name,source.url,placeholder('spar',name)),
+      sourceUrl:source.url
+    });
+  }
+  return dedupe(offers).slice(0,140);
+}
+
 function parseEuronicsValidity(text:string){
   const m=text.match(/Az ajánlat csak\s+(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})[.]?\s+és\s+(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})[.]?\s+között/i);
   if(!m) return undefined;
@@ -892,6 +962,7 @@ async function scrapeEuronics(source:RetailSource):Promise<Offer[]>{
 }
 
 export async function scrapeSpecialRetailer(source: RetailSource): Promise<Offer[] | null> {
+  if (source.id === 'spar') return scrapeSpar(source);
   if (source.id === 'aldi') return scrapeAldi(source);
   if (source.id === 'lidl') return scrapeLidl(source);
   if (source.id === 'penny') return scrapePenny(source);

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import type { Campaign, CustomRetailer, LoyaltyCard, Offer, StoreId } from '@/lib/types';
 import { fallbackOffers } from '@/lib/fallback-offers';
-import { knownStoreOrder, stores } from '@/lib/stores';
+import { knownStoreOrder, offerStoreOrder, stores } from '@/lib/stores';
 import { CodeDisplay } from '@/components/CodeDisplay';
 import { recordOfferHistory, readOfferHistoryStats, type HistoryStats } from '@/lib/client-history';
 import { evaluateWatchTerms, type WatchHit } from '@/lib/client-watch';
@@ -25,7 +25,8 @@ declare global {
   interface Window { BarcodeDetector?: BarcodeDetectorCtor }
 }
 
-const storeOrder: StoreId[] = knownStoreOrder;
+const storeOrder: StoreId[] = offerStoreOrder;
+const cardStoreOrder: StoreId[] = knownStoreOrder;
 
 function money(value: number) {
   return new Intl.NumberFormat('hu-HU').format(value) + ' Ft';
@@ -479,7 +480,7 @@ function AddCardModal({ onClose, onSave }: { onClose:()=>void; onSave:(c:Loyalty
 
   return <div className="modal-backdrop"><div className="modal-card">
     <div className="modal-head"><div><ScanLine/><h2>Kártya hozzáadása</h2></div><button className="icon-btn" onClick={onClose}><X/></button></div>
-    <label>Üzlet<select value={store} onChange={e=>chooseStore(e.target.value as StoreId)}>{[...storeOrder,'custom' as StoreId].map(s=><option key={s} value={s}>{stores[s].name}</option>)}</select></label>
+    <label>Üzlet<select value={store} onChange={e=>chooseStore(e.target.value as StoreId)}>{[...cardStoreOrder,'custom' as StoreId].map(s=><option key={s} value={s}>{stores[s].name}</option>)}</select></label>
     {store==='custom'&&<><label>Üzlet neve<input value={customStoreName} onChange={e=>setCustomStoreName(e.target.value)} placeholder="pl. Rossmann, Müller, DM"/></label><label>Kártya színe<div className="color-input-row"><input type="color" value={customColor} onChange={e=>setCustomColor(e.target.value)}/><span className="color-preview" style={{background:customColor,color:textForBackground(customColor)}}>{(customStoreName||'SAJÁT').slice(0,8).toUpperCase()}</span></div></label></>}
     <label>Kártya neve<input value={label} onChange={e=>setLabel(e.target.value)}/></label>
     <div className="scan-actions"><button onClick={startCamera}><Camera/> Kamera</button><button onClick={()=>fileRef.current?.click()}><ImagePlus/> Kép/screenshot</button><input ref={fileRef} hidden type="file" accept="image/*" onChange={e=>e.target.files?.[0]&&detectFromFile(e.target.files[0])}/></div>

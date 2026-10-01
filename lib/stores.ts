@@ -23,3 +23,7 @@ export const stores: Record<StoreId, { name: string; short: string; color: strin
 export const knownStoreOrder: StoreId[] = [
   'aldi','lidl','penny','tesco','spar','auchan','ikea','decathlon','obi','praktiker','deichmann','jysk','rossmann','dm','mediamarkt','euronics'
 ];
+
+export const offerStoreOrder: StoreId[] = [
+  'aldi','lidl','penny','tesco','spar','auchan','ikea','decathlon','obi','praktiker','deichmann','jysk','rossmann','euronics'
+];

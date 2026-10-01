@@ -191,7 +191,7 @@ function HomeView({ offers, campaigns, query, setQuery, onSelect, setTab, refres
       <div className="searchbox"><Search size={19} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Keress terméket, márkát vagy üzletet..." /></div>
       {watchHits.length>0&&<div className="watch-banner"><div className="watch-banner-head"><Bell size={16}/><strong>Figyelt ajánlatok</strong><span>{watchHits.length}</span></div>{watchHits.slice(0,2).map(hit=><button key={hit.term} onClick={()=>onSelect(hit.offer)}><div><b>{hit.term}</b><small>{hit.status==='lower'?'Olcsóbb lett':hit.status==='new'?'Új találat':'Aktuális találat'} · {stores[hit.offer.store].name}</small></div><strong>{money(hit.offer.price)}</strong><ChevronRight size={16}/></button>)}</div>}
       <div className="stores-row">
-        {storeOrder.map(s => <div className="store-chip" key={s}><StoreBadge store={s} /><span>{stores[s].name}</span></div>)}
+        {storeOrder.map(s => <button className="store-chip known-store-chip" key={s} onClick={()=>{setQuery(stores[s].name);setTab('search')}}><StoreBadge store={s} /><span>{stores[s].name}</span></button>)}
         {customRetailers.map(r => <button className="store-chip custom-store-chip" key={r.id} onClick={() => r.url && window.open(r.url, '_blank', 'noopener,noreferrer')}><span className="custom-store-badge" style={{background:r.color}}>{r.name.slice(0,6).toUpperCase()}</span><span>{r.name}</span></button>)}
         <button className="store-chip add-store-chip" onClick={onAddRetailer}><span className="custom-store-badge add"><Plus size={18}/></span><span>Üzlet</span></button>
       </div>

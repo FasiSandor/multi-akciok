@@ -764,11 +764,81 @@ async function scrapeDecathlon(source: RetailSource): Promise<Offer[]> {
   return dedupe(offers).slice(0,180);
 }
 
+
+function parseEuronicsValidity(text:string){
+  const m=text.match(/Az ajánlat csak\s+(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})[.]?\s+és\s+(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})[.]?\s+között/i);
+  if(!m) return undefined;
+  return {
+    start:m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'),
+    end:m[4]+'-'+m[5].padStart(2,'0')+'-'+m[6].padStart(2,'0')
+  };
+}
+
+async function scrapeEuronics(source:RetailSource):Promise<Offer[]>{
+  const html=await fetchHtml(source.url);
+  const data=lines(html);
+  const joined=data.join(' ');
+  const range=parseEuronicsValidity(joined);
+  const offers:Offer[]=[];
+
+  for(let i=0;i<data.length;i++){
+    const line=data[i];
+    if(/^\s*-\s*[\d\s.]+\s*Ft/i.test(line)) continue;
+
+    const priceMatches=[...line.matchAll(/([\d][\d\s.]*)\s*Ft/gi)];
+    let name='';
+    let prices:number[]=[];
+
+    if(priceMatches.length){
+      prices=priceMatches.map(m=>number(m[1])).filter(n=>n>=100&&n<=2_000_000);
+      const firstIndex=priceMatches[0]?.index ?? 0;
+      const prefix=line.slice(0,firstIndex).replace(/^Termék adatlap\s*/i,'').trim();
+      if(prefix.length>=4&&!/Image:|Online díjmentes|THM|kedvezmény|ajánlat/i.test(prefix)) name=prefix;
+      if(!name){
+        name=[...data.slice(Math.max(0,i-5),i)].reverse().find(x=>
+          x.length>=4&&x.length<=190 &&
+          !/Image:|Termék adatlap|THM|kedvezmény|ajánlat|szállítás|^-?[\d\s.]+\s*Ft/i.test(x)
+        )||'';
+      }
+    } else {
+      const next=data[i+1]||'';
+      if(/^\s*-\s*/.test(next)) continue;
+      const nextPrices=[...next.matchAll(/([\d][\d\s.]*)\s*Ft/gi)];
+      if(nextPrices.length&&line.length>=4&&line.length<=190&&!/Image:|Termék adatlap|THM|kedvezmény|ajánlat/i.test(line)){
+        name=line;
+        prices=nextPrices.map(m=>number(m[1])).filter(n=>n>=100&&n<=2_000_000);
+      }
+    }
+
+    if(!name||!prices.length) continue;
+    const price=prices[0];
+    const oldPrice=prices.find((p,index)=>index>0&&p>price);
+    if(!price) continue;
+
+    offers.push({
+      id:'euronics-'+slug(name)+'-'+price,
+      name,
+      category:categoryFor(name),
+      store:'euronics',
+      price,
+      oldPrice,
+      unitLabel:'1 db',
+      validFrom:range?.start??isoToday(),
+      validTo:range?.end??isoToday(),
+      validityText:range?undefined:'Ma ellenőrizve',
+      image:imageNear(html,name,source.url,placeholder('euronics',name)),
+      sourceUrl:source.url
+    });
+  }
+  return dedupe(offers).slice(0,180);
+}
+
 export async function scrapeSpecialRetailer(source: RetailSource): Promise<Offer[] | null> {
   if (source.id === 'aldi') return scrapeAldi(source);
   if (source.id === 'lidl') return scrapeLidl(source);
   if (source.id === 'penny') return scrapePenny(source);
   if (source.id === 'tesco') return scrapeTesco(source);
+  if (source.id === 'euronics') return scrapeEuronics(source);
   if (source.id === 'rossmann') return scrapeRossmann(source);
   if (source.id === 'praktiker') return scrapePraktiker(source);
   if (source.id === 'obi') return scrapeObi(source);

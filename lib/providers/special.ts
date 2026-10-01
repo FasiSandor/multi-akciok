@@ -276,6 +276,81 @@ function dedupe(offers: Offer[]) {
 }
 
 
+
+function parseAldiUnitPrice(text: string) {
+  const m = text.match(/([\d .]+(?:,\d+)?)\s*Ft\s*\/(kg|l|db|darab|csomó|szál|tekercs)/i);
+  if (!m) return undefined;
+  const value = Number(m[1].replace(/\s/g,'').replace(',','.'));
+  return Number.isFinite(value) ? { value, unit:m[2].toLowerCase() } : undefined;
+}
+
+function aldiPackPrice(name: string, unitPrice: {value:number;unit:string}) {
+  if (/\/\s*kg\b/i.test(name) && unitPrice.unit==='kg') return Math.round(unitPrice.value);
+  if (/\/\s*(?:db|darab)\b/i.test(name) && /^(?:db|darab)$/.test(unitPrice.unit)) return Math.round(unitPrice.value);
+  if (/\/\s*(?:csomó|szál|tekercs)\b/i.test(name) && ['csomó','szál','tekercs'].includes(unitPrice.unit)) return Math.round(unitPrice.value);
+
+  const quantities=[...name.matchAll(/(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l|db|darab)\b/gi)];
+  if (quantities.length !== 1) return undefined;
+  const qty=Number(quantities[0][1].replace(',','.'));
+  const qUnit=quantities[0][2].toLowerCase();
+  if (!Number.isFinite(qty)) return undefined;
+  if (unitPrice.unit==='kg' && qUnit==='g') return Math.round(unitPrice.value*qty/1000);
+  if (unitPrice.unit==='kg' && qUnit==='kg') return Math.round(unitPrice.value*qty);
+  if (unitPrice.unit==='l' && qUnit==='ml') return Math.round(unitPrice.value*qty/1000);
+  if (unitPrice.unit==='l' && qUnit==='l') return Math.round(unitPrice.value*qty);
+  if (/^(?:db|darab)$/.test(unitPrice.unit) && /^(?:db|darab)$/.test(qUnit)) return Math.round(unitPrice.value*qty);
+  return undefined;
+}
+
+function parseAldiDateRange(text: string) {
+  const m=text.match(/(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})-tól\s+(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})-ig/i);
+  if(!m) return undefined;
+  return {
+    start:`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`,
+    end:`${m[4]}-${m[5].padStart(2,'0')}-${m[6].padStart(2,'0')}`
+  };
+}
+
+async function scrapeAldi(source: RetailSource): Promise<Offer[]> {
+  const html=await fetchHtml(source.url);
+  const data=lines(html);
+  const offers:Offer[]=[];
+  let current={start:isoToday(),end:isoFuture(7)};
+
+  for(let i=0;i<data.length;i++){
+    const range=parseAldiDateRange(data[i]);
+    if(range){ current=range; continue; }
+    if(!/Cikkszám:/i.test(data[i])) continue;
+    const unitPrice=parseAldiUnitPrice(data[i]);
+    if(!unitPrice) continue;
+
+    const before=data.slice(Math.max(0,i-4),i);
+    const name=[...before].reverse().find(x=>
+      x.length>=3 && x.length<=150 &&
+      /(\/kg|\/darab|\/csomag|\/doboz|\/palack|\/üveg|\/tálca|\/vödör|\/pohár|\/szál|\/csokor|\b\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l)\b)/i.test(x) &&
+      !/Cikkszám|Ft\//i.test(x)
+    );
+    if(!name) continue;
+    const price=aldiPackPrice(name,unitPrice);
+    if(!price || price<30 || price>1_500_000) continue;
+
+    offers.push({
+      id:`aldi-${slug(name)}-${price}`,
+      name,
+      category:categoryFor(name),
+      store:'aldi',
+      price,
+      unitLabel:unitFrom([name]),
+      unitPrice:Math.round(unitPrice.value),
+      validFrom:current.start,
+      validTo:current.end,
+      image:imageNear(html,name,source.url,placeholder('aldi',name)),
+      sourceUrl:source.url
+    });
+  }
+  return dedupe(offers).slice(0,160);
+}
+
 function parseMonthDayRange(text: string) {
   const m = text.match(/(\d{1,2})[.\/-](\d{1,2})\.?\s*-\s*(\d{1,2})[.\/-](\d{1,2})/);
   if (!m) return undefined;
@@ -402,6 +477,7 @@ async function scrapeTesco(source: RetailSource): Promise<Offer[]> {
 }
 
 export async function scrapeSpecialRetailer(source: RetailSource): Promise<Offer[] | null> {
+  if (source.id === 'aldi') return scrapeAldi(source);
   if (source.id === 'lidl') return scrapeLidl(source);
   if (source.id === 'penny') return scrapePenny(source);
   if (source.id === 'tesco') return scrapeTesco(source);

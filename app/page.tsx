@@ -13,6 +13,7 @@ import { knownStoreOrder, stores } from '@/lib/stores';
 import { CodeDisplay } from '@/components/CodeDisplay';
 
 type Tab = 'home' | 'search' | 'list' | 'cards' | 'profile';
+type SourceState = { id:string; name:string; url:string; ok:boolean; checkedAt:string; count:number; note?:string };
 
 type BarcodeDetectorCtor = new (options?: { formats?: string[] }) => {
   detect(source: CanvasImageSource): Promise<Array<{ rawValue: string; format: string }>>;
@@ -23,13 +24,6 @@ declare global {
 }
 
 const storeOrder: StoreId[] = knownStoreOrder;
-
-const demoCards: LoyaltyCard[] = [
-  { id: 'demo-lidl', store: 'lidl', label: 'Lidl Plus', code: '123456789012', format: 'qr' },
-  { id: 'demo-penny', store: 'penny', label: 'PENNY kártya', code: '123987654321', format: 'barcode' },
-  { id: 'demo-tesco', store: 'tesco', label: 'Tesco Clubcard', code: '6340123456789012', format: 'barcode' },
-  { id: 'demo-spar', store: 'spar', label: 'SPAR hűségkártya', code: '234567890123', format: 'qr' }
-];
 
 function money(value: number) {
   return new Intl.NumberFormat('hu-HU').format(value) + ' Ft';
@@ -54,11 +48,12 @@ export default function Page() {
   const [offers, setOffers] = useState<Offer[]>(process.env.NODE_ENV === 'development' ? fallbackOffers : []);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Offer | null>(null);
-  const [listIds, setListIds] = useState<string[]>(['penny-chicken', 'aldi-banana', 'lidl-cheese', 'tesco-milk', 'spar-bread']);
+  const [listIds, setListIds] = useState<string[]>([]);
   const [cards, setCards] = useState<LoyaltyCard[]>([]);
   const [cardModal, setCardModal] = useState(false);
   const [activeCard, setActiveCard] = useState<LoyaltyCard | null>(null);
   const [lastRefresh, setLastRefresh] = useState<string>('');
+  const [sourceStates, setSourceStates] = useState<SourceState[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [customRetailers, setCustomRetailers] = useState<CustomRetailer[]>([]);
   const [retailerModal, setRetailerModal] = useState(false);
@@ -67,7 +62,7 @@ export default function Page() {
     const savedCards = localStorage.getItem('multi-akciok-cards');
     const savedList = localStorage.getItem('multi-akciok-list');
     const savedRetailers = localStorage.getItem('multi-akciok-custom-retailers');
-    setCards(savedCards ? JSON.parse(savedCards) : demoCards);
+    setCards(savedCards ? JSON.parse(savedCards) : []);
     if (savedList) setListIds(JSON.parse(savedList));
     if (savedRetailers) setCustomRetailers(JSON.parse(savedRetailers));
     refreshOffers();
@@ -92,6 +87,7 @@ export default function Page() {
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.offers)) setOffers(data.offers);
+        if (Array.isArray(data.sourceStates)) setSourceStates(data.sourceStates);
         setLastRefresh(data.refreshedAt || new Date().toISOString());
       }
     } catch {
@@ -121,7 +117,7 @@ export default function Page() {
         ) : tab === 'cards' ? (
           <CardsView cards={cards} setCards={setCards} onAdd={() => setCardModal(true)} onOpen={setActiveCard} />
         ) : (
-          <ProfileView customRetailers={customRetailers} onAddRetailer={() => setRetailerModal(true)} onRemoveRetailer={(id) => setCustomRetailers(prev => prev.filter(x => x.id !== id))} />
+          <ProfileView customRetailers={customRetailers} sourceStates={sourceStates} lastRefresh={lastRefresh} onAddRetailer={() => setRetailerModal(true)} onRemoveRetailer={(id) => setCustomRetailers(prev => prev.filter(x => x.id !== id))} />
         )}
         {!selected && <BottomNav tab={tab} setTab={setTab} />}
       </section>
@@ -215,7 +211,6 @@ function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; qu
 
 function OfferDetail({ offer, allOffers, onBack }: { offer: Offer; allOffers: Offer[]; onBack: () => void }) {
   const comparable = allOffers.filter(o => o.category === offer.category || o.name.toLowerCase().includes(offer.name.split(' ')[0].toLowerCase())).slice(0,5);
-  const avg = Math.round((offer.oldPrice || offer.price * 1.23));
   return (
     <div className="screen detail-screen">
       <div className="detail-nav"><button className="icon-btn" onClick={onBack}><ArrowLeft/></button><div><button className="icon-btn"><Heart/></button><button className="icon-btn"><ExternalLink/></button></div></div>
@@ -227,7 +222,7 @@ function OfferDetail({ offer, allOffers, onBack }: { offer: Offer; allOffers: Of
           <StoreBadge store={o.store}/><div><strong>{stores[o.store].name}</strong>{o.loyaltyOnly&&<small>Kártyás ár</small>}</div><div className="compare-price"><b>{money(o.price)}</b>{o.oldPrice&&<del>{money(o.oldPrice)}</del>}{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><Heart size={18}/>
         </div>)}
       </div>
-      <div className="deal-score"><BarChart3 size={31}/><div><strong>Tényleg jó akció?</strong><span>30 napos referencia: <b>{money(avg)}</b><br/>Most: <b>{money(offer.price)}</b></span></div><div className="score">-{Math.round((1-offer.price/avg)*100)}%<small>Valóban jó ár!</small></div></div>
+      <div className="deal-score"><BarChart3 size={31}/><div><strong>Árhistorika épül</strong><span>Most: <b>{money(offer.price)}</b><br/>A „tényleg jó akció?” minősítést csak összegyűjtött korábbi árak alapján mutatjuk majd.</span></div><div className="history-pending">30 nap<small>adatgyűjtés</small></div></div>
     </div>
   );
 }
@@ -235,8 +230,10 @@ function OfferDetail({ offer, allOffers, onBack }: { offer: Offer; allOffers: Of
 function ListView({ offers, listIds, setListIds }: { offers: Offer[]; listIds: string[]; setListIds: (v: string[])=>void }) {
   const selected = listIds.map(id=>offers.find(o=>o.id===id)).filter(Boolean) as Offer[];
   const sum = selected.reduce((a,b)=>a+b.price,0);
-  const storeTotals = storeOrder.map(store=>({store,total:Math.round(sum*(1+storeOrder.indexOf(store)*0.025))})).sort((a,b)=>a.total-b.total);
-  const saving = Math.max(0, Math.round(sum * .18));
+  const storeTotals = storeOrder
+    .map(store=>({store,total:selected.filter(o=>o.store===store).reduce((a,b)=>a+b.price,0),count:selected.filter(o=>o.store===store).length}))
+    .filter(x=>x.count>0)
+    .sort((a,b)=>a.total-b.total);
   return (
     <div className="screen list-screen">
       <div className="title-with-plus"><div><ListChecks/><h1>Bevásárlólista</h1></div><button className="round-plus"><Plus/></button></div>
@@ -249,11 +246,11 @@ function ListView({ offers, listIds, setListIds }: { offers: Offer[]; listIds: s
           <button className="add-product"><Plus size={18}/> Termék hozzáadása</button>
         </div>
         <div className="optimizer-card">
-          <span className="trophy">🏆</span><small>Ennyit spórolhatsz:</small><strong>{money(saving)}</strong><p>a kiválasztott listával</p>
-          <hr/><b>Legolcsóbb kombináció</b>{storeTotals.slice(0,5).map(x=><div className="store-total" key={x.store}><StoreBadge store={x.store} compact/><span>{money(x.total)}</span></div>)}
+          <span className="trophy">🧾</span><small>Kiválasztott akciók összege</small><strong>{money(sum)}</strong><p>{selected.length} termék</p>
+          <hr/><b>Boltonként</b>{storeTotals.slice(0,5).map(x=><div className="store-total" key={x.store}><StoreBadge store={x.store} compact/><span>{x.count} db · {money(x.total)}</span></div>)}
         </div>
       </div>
-      <button className="primary wide"><Sparkles size={18}/> Lista optimalizálása</button>
+      <button className="primary wide" disabled={!selected.length}><Sparkles size={18}/> Lista összehasonlítása</button>
     </div>
   );
 }
@@ -368,7 +365,7 @@ function FullCard({ card, onClose }: { card:LoyaltyCard; onClose:()=>void }) {
   return <div className="full-card-screen"><div className="full-card-top"><button className="icon-btn" onClick={onClose}><X/></button><span>Pénztári nézet</span></div><div className="full-card-brand" style={{background:s.color,color:s.text}}><StoreBadge store={card.store}/><h1>{card.label}</h1><p>{card.code}</p></div><div className="full-code"><CodeDisplay value={card.code} format={card.format} large/></div><p className="brightness-note">☀️ A képernyőt tartsd a leolvasó elé.</p></div>
 }
 
-function ProfileView({customRetailers,onAddRetailer,onRemoveRetailer}:{customRetailers:CustomRetailer[];onAddRetailer:()=>void;onRemoveRetailer:(id:string)=>void}){return <div className="screen profile-screen"><BrandHeader/><div className="profile-hero"><div className="avatar"><UserRound/></div><h1>MULTI AKCIÓK</h1><p>Saját bevásárlási asszisztens</p></div><div className="settings-list"><button><Heart/> Figyelőlista <ChevronRight/></button><button><Bell/> Értesítések <ChevronRight/></button><button><Tag/> Árhistorika <ChevronRight/></button><button onClick={onAddRetailer}><Plus/> Üzlet / forrás hozzáadása <ChevronRight/></button></div>{customRetailers.length>0&&<div className="custom-retailers-panel"><div className="section-title"><h2>Saját üzletek</h2></div>{customRetailers.map(r=><div className="custom-retailer-row" key={r.id}><span style={{background:r.color}}>{r.name.slice(0,2).toUpperCase()}</span><div><b>{r.name}</b><small>{r.url||'Saját üzlet'}</small></div><button onClick={()=>onRemoveRetailer(r.id)} aria-label="Törlés"><Trash2 size={17}/></button></div>)}</div>}</div>}
+function ProfileView({customRetailers,sourceStates,lastRefresh,onAddRetailer,onRemoveRetailer}:{customRetailers:CustomRetailer[];sourceStates:SourceState[];lastRefresh:string;onAddRetailer:()=>void;onRemoveRetailer:(id:string)=>void}){return <div className="screen profile-screen"><BrandHeader/><div className="profile-hero"><div className="avatar"><UserRound/></div><h1>MULTI AKCIÓK</h1><p>Saját bevásárlási asszisztens</p></div><div className="settings-list"><button><Heart/> Figyelőlista <ChevronRight/></button><button><Bell/> Értesítések <ChevronRight/></button><button><Tag/> Árhistorika <ChevronRight/></button><button onClick={onAddRetailer}><Plus/> Üzlet / forrás hozzáadása <ChevronRight/></button></div><div className="source-panel"><div className="section-title"><h2>Mai adatforrások</h2><small>{lastRefresh?new Date(lastRefresh).toLocaleTimeString('hu-HU',{hour:'2-digit',minute:'2-digit'}):''}</small></div>{sourceStates.map(s=><div className="source-row" key={s.id}><span className={s.ok&&s.count>0?'source-dot ok':s.ok?'source-dot warn':'source-dot bad'}/><div><b>{s.name}</b><small>{s.count>0?`${s.count} ajánlat`:s.note||'Nincs adat'}</small></div><a href={s.url} target="_blank" rel="noreferrer"><ExternalLink size={15}/></a></div>)}</div>{customRetailers.length>0&&<div className="custom-retailers-panel"><div className="section-title"><h2>Saját üzletek</h2></div>{customRetailers.map(r=><div className="custom-retailer-row" key={r.id}><span style={{background:r.color}}>{r.name.slice(0,2).toUpperCase()}</span><div><b>{r.name}</b><small>{r.url||'Saját üzlet'}</small></div><button onClick={()=>onRemoveRetailer(r.id)} aria-label="Törlés"><Trash2 size={17}/></button></div>)}</div>}</div>}
 
 function BottomNav({tab,setTab}:{tab:Tab;setTab:(t:Tab)=>void}){
   const items:[Tab,ReactNode,string][]=[['home',<Home key="h"/>,'Kezdőlap'],['search',<Search key="s"/>,'Keresés'],['list',<ListChecks key="l"/>,'Lista'],['cards',<CreditCard key="c"/>,'Kártyák'],['profile',<UserRound key="p"/>,'Profil']];

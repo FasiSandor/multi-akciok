@@ -252,8 +252,136 @@ function dedupe(offers: Offer[]) {
   return [...map.values()];
 }
 
+
+function parseMonthDayRange(text: string) {
+  const m = text.match(/(\d{1,2})[.\/-](\d{1,2})\.?\s*-\s*(\d{1,2})[.\/-](\d{1,2})/);
+  if (!m) return undefined;
+  const now = new Date();
+  const year = now.getFullYear();
+  const start = new Date(year, Number(m[1])-1, Number(m[2]));
+  let end = new Date(year, Number(m[3])-1, Number(m[4]));
+  if (end.getTime() < start.getTime()) end = new Date(year+1, Number(m[3])-1, Number(m[4]));
+  const iso = (d: Date) => d.toISOString().slice(0,10);
+  return { start: iso(start), end: iso(end) };
+}
+
+function discoverLidlPlusUrl(html: string) {
+  const m = html.match(/href=["']([^"']*\/c\/lidl-plus-ajanlataink\/[^"']+)["']/i);
+  return m ? absoluteUrl(m[1], 'https://www.lidl.hu') : undefined;
+}
+
+function parseLidlPage(html: string, url: string) {
+  const data = lines(html);
+  const offers: Offer[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (!/Lidl Plus-szal/i.test(data[i])) continue;
+    const before = data.slice(Math.max(0,i-9), i);
+    const after = data.slice(i+1, i+10);
+    const oldLine = [...before].reverse().find(x => /\d[\d .]*\s*Ft/i.test(x));
+    const priceLine = after.find(x => /\d[\d .]*\s*Ft/i.test(x));
+    if (!priceLine) continue;
+    const price = number(priceLine);
+    const oldPrice = oldLine ? number(oldLine) : undefined;
+    if (!price || price > 1_500_000) continue;
+
+    const name = [...before].reverse().find(x =>
+      x.length >= 2 && x.length <= 120 &&
+      !/Ft|Rendered:|Ajánlat|Lidl Plus|Image:|kedvezmény|^-?\d+%/i.test(x) &&
+      !/^[A-ZÁÉÍÓÖŐÚÜŰ0-9 &'’.-]{2,28}$/.test(x)
+    ) ?? [...before].reverse().find(x => x.length >= 2 && x.length <= 120 && !/Ft|Rendered:|Ajánlat|Image:/i.test(x));
+    if (!name) continue;
+
+    const rangeLine = after.find(x => /Ajánlat érvényes:/i.test(x)) ?? before.find(x => /Ajánlat érvényes:/i.test(x));
+    const range = rangeLine ? parseMonthDayRange(rangeLine) : undefined;
+    const unitPriceLine = after.find(x => /1\s*(?:kg|l|db)\s*=\s*\d[\d .]*\s*Ft/i.test(x));
+    const unitPrice = unitPriceLine ? number(unitPriceLine.split('=')[1] ?? '') : undefined;
+
+    offers.push({
+      id: `lidl-${slug(name)}-${price}`,
+      name,
+      category: categoryFor(name),
+      store: 'lidl',
+      price,
+      oldPrice: oldPrice && oldPrice > price ? oldPrice : undefined,
+      unitLabel: unitFrom(after),
+      unitPrice,
+      validFrom: range?.start ?? isoToday(),
+      validTo: range?.end ?? isoFuture(7),
+      loyaltyOnly: true,
+      image: placeholder('lidl', name),
+      sourceUrl: url
+    });
+  }
+  return dedupe(offers).slice(0,120);
+}
+
+async function scrapeLidl(source: RetailSource): Promise<Offer[]> {
+  const home = await fetchHtml(source.url);
+  const url = discoverLidlPlusUrl(home) ?? 'https://www.lidl.hu/c/lidl-plus-ajanlataink/a10050097';
+  const html = url === source.url ? home : await fetchHtml(url);
+  return parseLidlPage(html, url);
+}
+
+function parseTescoDate(text: string) {
+  const iso = parseIsoDate(text);
+  if (iso) return iso;
+  const m = text.match(/(\d{1,2})[\/-](\d{1,2})[\/-](20\d{2})/);
+  if (!m) return undefined;
+  return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+}
+
+async function scrapeTesco(source: RetailSource): Promise<Offer[]> {
+  const url = 'https://bevasarlas.tesco.hu/shop/hu-HU/buylists/weekly-offers/weekly-offers';
+  const html = await fetchHtml(url);
+  const data = lines(html);
+  const offers: Offer[] = [];
+
+  for (let i = 0; i < data.length; i++) {
+    if (!/Offer valid until|Ajánlat.*érvényes/i.test(data[i])) continue;
+    const before = data.slice(Math.max(0,i-10), i+1);
+    const after = data.slice(i+1, i+8);
+    const priceLine = after.find(x => /^\s*\d[\d .]*\s*Ft\s*$/i.test(x) || /^\s*\d[\d .]*\s*Ft\b/i.test(x));
+    if (!priceLine) continue;
+    const price = number(priceLine);
+    if (!price || price > 1_500_000) continue;
+
+    const oldMatch = data[i].match(/(?:was|korábban|volt)\s*(\d[\d .]*)\s*Ft/i);
+    const oldPrice = oldMatch ? number(oldMatch[1]) : undefined;
+    const name = [...before].reverse().find(x =>
+      x.length >= 3 && x.length <= 150 &&
+      !/Offer valid|Ajánlat|Write a review|Rest of category|Special Offer|Clubcard|Super price|kedvezmény|^-?\d+%/i.test(x) &&
+      !/\d[\d .]*\s*Ft/i.test(x)
+    );
+    if (!name) continue;
+
+    const unitLine = after.find(x => /Ft\/(?:kg|litre|l|each|db)/i.test(x));
+    const unitPrice = unitLine ? number(unitLine) : undefined;
+    const validTo = parseTescoDate(data[i]) ?? isoFuture(7);
+    const loyaltyOnly = /Clubcard/i.test(before.join(' ') + ' ' + data[i]);
+
+    offers.push({
+      id: `tesco-${slug(name)}-${price}`,
+      name,
+      category: categoryFor(name),
+      store: 'tesco',
+      price,
+      oldPrice: oldPrice && oldPrice > price ? oldPrice : undefined,
+      unitLabel: unitFrom(before),
+      unitPrice,
+      validFrom: isoToday(),
+      validTo,
+      loyaltyOnly,
+      image: placeholder('tesco', name),
+      sourceUrl: url
+    });
+  }
+  return dedupe(offers).slice(0,120);
+}
+
 export async function scrapeSpecialRetailer(source: RetailSource): Promise<Offer[] | null> {
+  if (source.id === 'lidl') return scrapeLidl(source);
   if (source.id === 'penny') return scrapePenny(source);
+  if (source.id === 'tesco') return scrapeTesco(source);
   if (source.id === 'deichmann') return scrapeDeichmann(source);
   if (source.id === 'auchan') return scrapeAuchan(source);
   return null;

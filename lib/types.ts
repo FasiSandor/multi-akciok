@@ -1,6 +1,7 @@
 export type StoreId =
   | 'aldi' | 'lidl' | 'penny' | 'tesco' | 'spar' | 'auchan'
   | 'ikea' | 'decathlon' | 'obi' | 'praktiker' | 'deichmann' | 'jysk'
+  | 'rossmann' | 'dm' | 'mediamarkt'
   | 'custom';
 
 export type Offer = {

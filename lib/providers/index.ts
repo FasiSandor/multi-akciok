@@ -8,7 +8,7 @@ export async function collectLiveOffers(): Promise<{offers:Offer[];sources:Sourc
   const results=await Promise.all(retailSources.map(async source=>{
     try{
       const special=await scrapeSpecialRetailer(source);
-      const offers=special ?? await scrapeRetailer(source);
+      const offers=special && special.length ? special : await scrapeRetailer(source);
       return {offers,state:{...source,ok:true,checkedAt:new Date().toISOString(),count:offers.length,note:offers.length?'':'Nem találtam feldolgozható aktuális ajánlatot.'}};
     }catch(error){
       return {offers:[] as Offer[],state:{...source,ok:false,checkedAt:new Date().toISOString(),count:0,note:error instanceof Error?error.message:'Ismeretlen hiba'}};

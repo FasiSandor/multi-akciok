@@ -63,6 +63,68 @@ function dedupe(items:Campaign[]){
   return [...m.values()];
 }
 
+
+function numericRange(text:string){
+  const m=text.match(/(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})\.?\s*-\s*(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})/);
+  if(!m) return undefined;
+  return {
+    start:m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'),
+    end:m[4]+'-'+m[5].padStart(2,'0')+'-'+m[6].padStart(2,'0')
+  };
+}
+
+async function dmCampaigns():Promise<Campaign[]>{
+  const url='https://www.dm.hu/';
+  const html=await fetchHtml(url);
+  const data=strip(html);
+  const out:Campaign[]=[];
+  const line=data.find(x=>/Bónusz hetek a dm-ben/i.test(x));
+  if(line){
+    const a=ascii(line);
+    const m=a.match(/(20\d{2})[.\s]+([a-z]+)\s+(\d{1,2})\s*-\s*(\d{1,2})/i);
+    let start:string|undefined,end:string|undefined;
+    if(m){
+      start=huDate(m[1],m[2],m[3]);
+      end=huDate(m[1],m[2],m[4]);
+    }
+    out.push({
+      id:'dm-bonus-weeks',
+      store:'dm',
+      title:'Bónusz hetek a dm-ben',
+      subtitle:'Aktuális dm kampány és active beauty ajánlatok',
+      validFrom:start,
+      validTo:end,
+      loyaltyOnly:true,
+      sourceUrl:url
+    });
+  }
+  return out;
+}
+
+async function mediaMarktCampaigns():Promise<Campaign[]>{
+  const url='https://www.mediamarkt.hu/hu/campaign/promocioink';
+  const html=await fetchHtml(url);
+  const data=strip(html);
+  const out:Campaign[]=[];
+  for(let i=0;i<data.length;i++){
+    if(!/^Érvényes:/i.test(data[i])) continue;
+    const range=numericRange(data[i]);
+    const title=data.slice(i+1,i+5).find(x=>x.length>5&&!/Megnézem|Lejár|nap/i.test(x));
+    if(!title) continue;
+    out.push({
+      id:'mediamarkt-'+ascii(title).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60),
+      store:'mediamarkt',
+      title,
+      subtitle:'MediaMarkt aktuális promóció',
+      validFrom:range?.start,
+      validTo:range?.end,
+      sourceUrl:url
+    });
+    if(out.length>=6) break;
+  }
+  return dedupe(out);
+}
+
 async function obiCampaigns():Promise<Campaign[]>{
   const url='https://www.obi.hu/ajanlatok';
   const html=await fetchHtml(url);
@@ -129,6 +191,6 @@ async function praktikerCampaigns():Promise<Campaign[]>{
 }
 
 export async function collectCampaigns():Promise<Campaign[]>{
-  const results=await Promise.allSettled([obiCampaigns(),praktikerCampaigns()]);
+  const results=await Promise.allSettled([obiCampaigns(),praktikerCampaigns(),dmCampaigns(),mediaMarktCampaigns()]);
   return results.flatMap(r=>r.status==='fulfilled'?r.value:[]);
 }

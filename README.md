@@ -4,7 +4,7 @@ Mobil-first magyar akciókereső, ár-összehasonlító és digitális hűségk�
 
 ## V1 funkciók
 
-- napi nyilvános forrásellenőrzés: ALDI, Lidl, PENNY, Tesco, SPAR, Auchan, IKEA, Decathlon, OBI, Praktiker, Deichmann, JYSK
+- napi nyilvános forrásellenőrzés: ALDI, Lidl, PENNY, Tesco, SPAR, Auchan, IKEA, Decathlon, OBI, Praktiker, Deichmann, JYSK, Rossmann, Euronics, Gyöngy Patikák, Alma · Újvárosi Patika és Kamilla Patika · Mezőtúr
 - további saját üzlet / akcióforrás felvitele névvel, URL-lel, színnel és megjegyzéssel
 - termékkártyák képpel, akciós árral, régi árral és egységárral
 - keresés és bolti szűrés
@@ -15,7 +15,7 @@ Mobil-first magyar akciókereső, ár-összehasonlító és digitális hűségk�
 - kézi kódmegadás és Saját üzlet opció bármilyen további kártyához
 - pénztári, teljes képernyős QR/vonalkód megjelenítés
 - PWA manifest
-- napi Vercel Cron forrásfrissítés
+- napi Supabase Cron + Edge Function ármentés, Vercel Cron nélkül
 
 ## Adatforrás-stratégia
 
@@ -30,7 +30,8 @@ A production API nem helyettesíti a sikertelen live adatgyűjtést demo árakka
 - TypeScript
 - Vercel
 - localStorage a felhasználó kártyáihoz, listájához és saját üzleteihez
-- `CRON_SECRET` opcionális
+- TELEKI Supabase projektben elkülönített `multi_akciok` séma
+- csak nyilvános Supabase publishable kulcs az árhistorika olvasásához; service-role kulcs nincs a Vercel appban
 
 ## Design
 

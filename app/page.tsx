@@ -536,7 +536,7 @@ function AddCardModal({ onClose, onSave }: { onClose:()=>void; onSave:(c:Loyalty
 
   useEffect(()=>()=>{streamRef.current?.getTracks().forEach(t=>t.stop())},[]);
 
-  function chooseStore(value: StoreId) { setStore(value); setLabel(value==='custom'?'Saját hűségkártya':stores[value].name + (value==='tesco'?' Clubcard':value==='lidl'?' Plus':' kártya')); if(value!=='custom') setCustomStoreName(''); }
+  function chooseStore(value: StoreId) { const loyaltyLabel=value==='tesco'?'Tesco Clubcard':value==='lidl'?'Lidl Plus':value==='gyongy'?'Gyöngy Prémium':value==='alma'?'Alma+':value==='kamilla-mezotur'?'Gyöngy Prémium · Kamilla':stores[value].name+' kártya'; setStore(value); setLabel(value==='custom'?'Saját hűségkártya':loyaltyLabel); if(value!=='custom') setCustomStoreName(''); }
 
   async function detectFromFile(file: File) {
     setMessage('Kód keresése…');

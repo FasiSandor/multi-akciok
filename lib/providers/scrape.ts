@@ -3,7 +3,7 @@ import type { Offer, StoreId } from '@/lib/types';
 export type RetailSource = { id: Exclude<StoreId,'custom'>; name: string; url: string };
 
 export const retailSources: RetailSource[] = [
-  { id: 'aldi', name: 'ALDI', url: 'https://www.aldi.hu/termekek' },
+  { id: 'aldi', name: 'ALDI', url: 'https://www.aldi.hu/szuper-akciok-mindennap' },
   { id: 'lidl', name: 'Lidl', url: 'https://www.lidl.hu/' },
   { id: 'penny', name: 'PENNY', url: 'https://www.penny.hu/ajanlatok' },
   { id: 'tesco', name: 'Tesco', url: 'https://bevasarlas.tesco.hu/shop/hu-HU/buylists/weekly-offers/weekly-offers/top-offer' },

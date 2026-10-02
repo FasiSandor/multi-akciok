@@ -546,6 +546,7 @@ async function scrapeRossmann(source:RetailSource):Promise<Offer[]>{
       validFrom:isoToday(),
       validTo:isoToday(),
       validityText:'Ma ellenőrizve',
+      priceScope:'Online drogéria ár · bolti elérhetőség eltérhet',
       image:imageNear(html,name,source.url,placeholder('rossmann',name)),
       sourceUrl:source.url
     });
@@ -669,6 +670,7 @@ async function scrapeObi(source:RetailSource):Promise<Offer[]>{
       validFrom:isoToday(),
       validTo:isoToday(),
       validityText:'Ma ellenőrizve',
+      priceScope:'Online/áruházi ár eltérhet',
       image:imageNear(html,name,source.url,placeholder('obi',name)),
       sourceUrl:source.url
     });
@@ -684,7 +686,7 @@ function dateFromMonthDay(month: number, day: number) {
 }
 
 async function scrapeIkea(source: RetailSource): Promise<Offer[]> {
-  const url = 'https://www.ikea.com/hu/hu/offers/limited-time-offers/';
+  const url = source.url;
   const html = await fetchHtml(url);
   const data = lines(html);
   const offers: Offer[] = [];
@@ -977,6 +979,7 @@ async function scrapeEuronics(source:RetailSource):Promise<Offer[]>{
       validFrom:range?.start??isoToday(),
       validTo:range?.end??isoToday(),
       validityText:range?undefined:'Ma ellenőrizve',
+      priceScope:'Online ajánlat · bolti ár eltérhet',
       image:imageNear(html,name,source.url,placeholder('euronics',name)),
       sourceUrl:source.url
     });

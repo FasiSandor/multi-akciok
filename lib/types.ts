@@ -15,6 +15,7 @@ export type Offer = {
   unitPrice?: number;
   unitPriceLabel?: string;
   validityText?: string;
+  priceScope?: string;
   validFrom: string;
   validTo: string;
   image: string;

@@ -292,7 +292,7 @@ function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; qu
       <div className="results-list">
         {visible.map(o => <button className="result-card" key={o.id} onClick={()=>onSelect(o)}>
           <div className="result-image"><Image src={o.image} alt={o.name} fill sizes="88px"/></div>
-          <div className="result-main"><div className="result-top"><StoreBadge store={o.store} compact/>{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><strong>{o.name}</strong><small>{o.unitLabel} · {o.category}{o.unitPrice?` · ${money(o.unitPrice)}${o.unitPriceLabel||''}`:''}</small></div>
+          <div className="result-main"><div className="result-top"><StoreBadge store={o.store} compact/>{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><strong>{o.name}</strong><small>{o.unitLabel} · {o.category}{o.unitPrice?` · ${money(o.unitPrice)}${o.unitPriceLabel||''}`:''}</small>{o.priceScope&&<em className="price-scope">{o.priceScope}</em>}</div>
           <div className="result-price"><b>{money(o.price)}</b>{o.oldPrice&&<del>{money(o.oldPrice)}</del>}<ChevronRight size={18}/></div>
         </button>)}
       </div>
@@ -308,7 +308,7 @@ function OfferDetail({ offer, allOffers, onBack, onWatch, watched }: { offer: Of
     <div className="screen detail-screen">
       <div className="detail-nav"><button className="icon-btn" onClick={onBack}><ArrowLeft/></button><div><button className="icon-btn" onClick={onWatch} aria-label={watched?'Figyelve':'Figyelés'}><Heart fill={watched?'currentColor':'none'}/></button>{offer.sourceUrl&&<a className="icon-btn" href={offer.sourceUrl} target="_blank" rel="noreferrer" aria-label="Forrás megnyitása"><ExternalLink/></a>}</div></div>
       <div className="hero-product"><Image src={offer.image} alt={offer.name} fill sizes="80vw" /></div>
-      <h1>{offer.name}</h1><p>{offer.unitLabel}</p>
+      <h1>{offer.name}</h1><p>{offer.unitLabel}</p>{offer.priceScope&&<div className="price-scope detail-scope">{offer.priceScope}</div>}
       <div className="segmented"><button className="active">Árak és üzletek</button><button>Árhistorika</button></div>
       <div className="compare-list">
         {[offer, ...comparable.filter(x=>x.id!==offer.id)].slice(0,5).map((o,i)=><div className="compare-row" key={o.id}>

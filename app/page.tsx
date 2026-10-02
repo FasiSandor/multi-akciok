@@ -243,7 +243,7 @@ function HomeView({ offers, campaigns, query, setQuery, onSelect, onWatch, watch
   const top = [...offers].sort((a,b)=>discount(b)-discount(a) || a.price-b.price).slice(0, 3);
   const categories = [
     ['🥩', 'Élelmiszer'], ['🛋️', 'Lakberendezés'], ['🏃', 'Sport'], ['🛠️', 'Barkács'],
-    ['👟', 'Cipő'], ['🌿', 'Kert'], ['🧴', 'Háztartás'], ['💄', 'Drogéria'], ['📺', 'Műszaki'], ['🏷️', 'Minden akció']
+    ['👟', 'Cipő'], ['🌿', 'Kert'], ['🧴', 'Háztartás'], ['💄', 'Drogéria'], ['💊', 'Gyógyszertár'], ['📺', 'Műszaki'], ['🏷️', 'Minden akció']
   ];
   return (
     <div className="screen home-screen">

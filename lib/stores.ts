@@ -17,13 +17,16 @@ export const stores: Record<StoreId, { name: string; short: string; color: strin
   dm: { name: 'dm', short: 'dm', color: '#00a0df', text: '#ffffff', group: 'custom' },
   mediamarkt: { name: 'MediaMarkt', short: 'MEDIA', color: '#df0000', text: '#ffffff', group: 'custom' },
   euronics: { name: 'Euronics', short: 'EURON', color: '#e30613', text: '#ffffff', group: 'custom' },
+  gyongy: { name: 'Gyöngy Patikák', short: 'GYÖNGY', color: '#b12868', text: '#ffffff', group: 'custom' },
+  alma: { name: 'Alma Patikák', short: 'ALMA', color: '#7ba530', text: '#ffffff', group: 'custom' },
+  'kamilla-mezotur': { name: 'Kamilla Patika · Mezőtúr', short: 'KAMILLA', color: '#2f8b6a', text: '#ffffff', group: 'custom' },
   custom: { name: 'Saját üzlet', short: 'SAJÁT', color: '#5b6472', text: '#ffffff', group: 'custom' }
 };
 
 export const knownStoreOrder: StoreId[] = [
-  'aldi','lidl','penny','tesco','spar','auchan','ikea','decathlon','obi','praktiker','deichmann','jysk','rossmann','dm','mediamarkt','euronics'
+  'aldi','lidl','penny','tesco','spar','auchan','ikea','decathlon','obi','praktiker','deichmann','jysk','rossmann','dm','mediamarkt','euronics','gyongy','alma','kamilla-mezotur'
 ];
 
 export const offerStoreOrder: StoreId[] = [
-  'aldi','lidl','penny','tesco','spar','auchan','ikea','decathlon','obi','praktiker','deichmann','jysk','rossmann','euronics'
+  'aldi','lidl','penny','tesco','spar','auchan','ikea','decathlon','obi','praktiker','deichmann','jysk','rossmann','euronics','gyongy','alma','kamilla-mezotur'
 ];

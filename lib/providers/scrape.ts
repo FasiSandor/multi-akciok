@@ -16,7 +16,10 @@ export const retailSources: RetailSource[] = [
   { id: 'deichmann', name: 'Deichmann', url: 'https://www.deichmann.com/hu-hu/c/akcio-akcios-cipok-481' },
   { id: 'jysk', name: 'JYSK', url: 'https://jysk.hu/kampany' },
   { id: 'rossmann', name: 'Rossmann', url: 'https://shop.rossmann.hu/altalanos-akciok' },
-  { id: 'euronics', name: 'Euronics', url: 'https://euronics.hu/het-ajanlatai' }
+  { id: 'euronics', name: 'Euronics', url: 'https://euronics.hu/het-ajanlatai' },
+  { id: 'gyongy', name: 'Gyöngy Patikák', url: 'https://gyongypatikak.hu/akcios-termekek' },
+  { id: 'alma', name: 'Alma Patikák', url: 'https://almapatika.hu/' },
+  { id: 'kamilla-mezotur', name: 'Kamilla Patika · Mezőtúr', url: 'https://gyongypatikak.hu/patika/kamilla-patika-mezotur' }
 ];
 
 function clean(value: string) {

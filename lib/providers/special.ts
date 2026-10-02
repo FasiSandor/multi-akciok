@@ -1069,6 +1069,103 @@ async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
   return dedupe(offers).slice(0,180);
 }
 
+
+const pharmacyMonths:Record<string,number>={
+  januar:1,februar:2,marcius:3,aprilis:4,majus:5,junius:6,julius:7,augusztus:8,
+  szeptember:9,oktober:10,november:11,december:12
+};
+
+function asciiHu(value:string){
+  return value.toLocaleLowerCase('hu').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+
+function pharmacyDateRange(text:string){
+  const normalized=asciiHu(text);
+  const yearMatch=normalized.match(/\b(20\d{2})\b/);
+  const now=new Date();
+  const year=yearMatch?Number(yearMatch[1]):now.getFullYear();
+
+  const full=normalized.match(/(?:20\d{2}[. ]+)?([a-z]+)\s+(\d{1,2})\s*[-–]\s*(?:(?:20\d{2})[. ]+)?(?:([a-z]+)\s+)?(\d{1,2})/i);
+  if(!full) return undefined;
+  const startMonth=pharmacyMonths[full[1]];
+  const endMonth=pharmacyMonths[full[3]||full[1]];
+  if(!startMonth||!endMonth) return undefined;
+  const start=year+'-'+String(startMonth).padStart(2,'0')+'-'+String(Number(full[2])).padStart(2,'0');
+  let endYear=year;
+  if(endMonth<startMonth) endYear++;
+  const end=endYear+'-'+String(endMonth).padStart(2,'0')+'-'+String(Number(full[4])).padStart(2,'0');
+  return {start,end};
+}
+
+function parsePharmacyOfferLine(line:string,store:'gyongy'|'alma'|'kamilla-mezotur',url:string,defaultRange?:{start:string;end:string}):Offer|null{
+  if(!/Akciós ár/i.test(line)||!/Korábbi ár/i.test(line)) return null;
+  const priceMatch=line.match(/Akciós ár[:\s]*([\d\s.]+)\s*Ft/i);
+  const oldMatch=line.match(/Korábbi ár[:\s]*([\d\s.]+)\s*Ft/i);
+  if(!priceMatch||!oldMatch) return null;
+  const price=number(priceMatch[1]);
+  const oldPrice=number(oldMatch[1]);
+  if(!price||!oldPrice||price>=oldPrice||price>500_000) return null;
+
+  let name=line.split(/Akciós ár/i)[0].trim();
+  name=name.replace(/^[-–%\s]+/,'').replace(/^(?:Kiemelt termék|Minden akciós termék)\s*/i,'').trim();
+  if(name.length<3||name.length>220) return null;
+
+  const unitMatch=line.match(/(?:Akciós\s+)?(?:Egységár|egységár)[:\s]*([\d\s.,]+)\s*Ft\s*\/?\s*(ml|g|db|kg|l)\b/i);
+  const unitPrice=unitMatch?Number(unitMatch[1].replace(/\s/g,'').replace('.','').replace(',','.')):undefined;
+  const range=pharmacyDateRange(line)??defaultRange;
+  const isPrescription=/\b(?:vényköteles|vényre|RX)\b/i.test(line)&&!/\bVN\b/i.test(line);
+  if(isPrescription) return null;
+
+  return {
+    id:store+'-'+slug(name),
+    name,
+    category:'Gyógyszertár',
+    store,
+    price,
+    oldPrice,
+    unitLabel:unitFrom([name]),
+    unitPrice:Number.isFinite(unitPrice)?Math.round((unitPrice as number)*10)/10:undefined,
+    unitPriceLabel:unitMatch?'/'+unitMatch[2].toLowerCase():undefined,
+    validFrom:range?.start??isoToday(),
+    validTo:range?.end??isoToday(),
+    validityText:range?undefined:'Ma ellenőrizve',
+    priceScope:store==='kamilla-mezotur'?'Kamilla Patika · Mezőtúr':store==='gyongy'?'Résztvevő Gyöngy Patikák · helyi ár eltérhet':'Résztvevő Alma Patikák · helyi ár eltérhet',
+    conditionText:/\bVN\b/i.test(line)?'Vény nélkül kapható':undefined,
+    image:imageNear(line,name,url,placeholder(store,name)),
+    sourceUrl:url
+  };
+}
+
+function parsePharmacyPage(html:string,store:'gyongy'|'alma'|'kamilla-mezotur',url:string):Offer[]{
+  const data=lines(html);
+  const offers:Offer[]=[];
+  let currentRange:{start:string;end:string}|undefined;
+
+  for(const line of data){
+    const foundRange=pharmacyDateRange(line);
+    if(foundRange&&/akció|október|szeptember|november|december/i.test(line)) currentRange=foundRange;
+    const offer=parsePharmacyOfferLine(line,store,url,currentRange);
+    if(offer) offers.push(offer);
+  }
+
+  return dedupe(offers);
+}
+
+async function scrapeGyongy(source:RetailSource):Promise<Offer[]>{
+  const html=await fetchHtml(source.url);
+  return parsePharmacyPage(html,'gyongy',source.url).slice(0,220);
+}
+
+async function scrapeAlma(source:RetailSource):Promise<Offer[]>{
+  const html=await fetchHtml(source.url);
+  return parsePharmacyPage(html,'alma',source.url).slice(0,220);
+}
+
+async function scrapeKamillaMezotur(source:RetailSource):Promise<Offer[]>{
+  const html=await fetchHtml(source.url);
+  return parsePharmacyPage(html,'kamilla-mezotur',source.url).slice(0,220);
+}
+
 function parseEuronicsValidity(text:string){
   const m=text.match(/Az ajánlat csak\s+(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})[.]?\s+és\s+(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})[.]?\s+között/i);
   if(!m) return undefined;
@@ -1139,6 +1236,9 @@ async function scrapeEuronics(source:RetailSource):Promise<Offer[]>{
 }
 
 export async function scrapeSpecialRetailer(source: RetailSource): Promise<Offer[] | null> {
+  if (source.id === 'kamilla-mezotur') return scrapeKamillaMezotur(source);
+  if (source.id === 'gyongy') return scrapeGyongy(source);
+  if (source.id === 'alma') return scrapeAlma(source);
   if (source.id === 'spar') return scrapeSpar(source);
   if (source.id === 'aldi') return scrapeAldi(source);
   if (source.id === 'lidl') return scrapeLidl(source);

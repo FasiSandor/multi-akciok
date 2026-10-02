@@ -605,7 +605,7 @@ function AddCardModal({ onClose, onSave }: { onClose:()=>void; onSave:(c:Loyalty
 
       const { BrowserMultiFormatReader } = await import('@zxing/browser');
       const reader = new BrowserMultiFormatReader();
-      const result = reader.decode(videoRef.current);
+      const result = await reader.decodeFromVideoElement(videoRef.current);
       setCode(result.getText());
       setFormat(String(result.getBarcodeFormat()).toUpperCase().includes('QR')?'qr':'barcode');
       setMessage('Kód beolvasva.');

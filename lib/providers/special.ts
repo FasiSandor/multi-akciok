@@ -135,60 +135,151 @@ function pennyRange(now = new Date()) {
   return { key: `${mmdd(start)}${mmdd(end)}`, start: start.toISOString().slice(0,10), end: end.toISOString().slice(0,10) };
 }
 
-async function scrapePenny(source: RetailSource): Promise<Offer[]> {
-  const range = pennyRange();
-  const url = `https://www.penny.hu/category/ajanlatok-${range.key}-koezoett-penny-kartyaval-olcsobb-termekek?pageSize=100`;
-  const html = await fetchHtml(url);
-  const data = lines(html);
-  const offers: Offer[] = [];
+function pennyCouponRange(text:string){
+  const m=text.match(/(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})\s*-\s*(?:(20\d{2})[.\/-])?(\d{1,2})[.\/-](\d{1,2})/);
+  if(!m) return undefined;
+  return {
+    start:m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'),
+    end:(m[4]||m[1])+'-'+m[5].padStart(2,'0')+'-'+m[6].padStart(2,'0')
+  };
+}
 
-  for (let i = 0; i < data.length; i++) {
-    if (!/PENNY Kártya nélkül/i.test(data[i])) continue;
-
-    const before = data.slice(Math.max(0, i - 12), i);
-    const name = [...before].reverse().find(x =>
-      x.length >= 3 && x.length <= 120 &&
-      !/^\d/.test(x) &&
+function parsePennyCardPage(html:string,url:string,range:{start:string;end:string}):Offer[]{
+  const data=lines(html);
+  const offers:Offer[]=[];
+  for(let i=0;i<data.length;i++){
+    if(!/PENNY Kártya nélkül/i.test(data[i])) continue;
+    const before=data.slice(Math.max(0,i-12),i);
+    const name=[...before].reverse().find(x=>
+      x.length>=3&&x.length<=120&&!/^\d/.test(x)&&
       !/termék|ajánlat|között|tól|ig|kárty|kg|ml|lt|db|sort|filter/i.test(x)
     );
-    if (!name) continue;
-
-    const after = data.slice(i + 1, i + 12);
-    const regularLine = after.find(x => /\d[\d .]*\s*Ft\b/i.test(x));
-    const cardIndex = after.findIndex(x => /PENNY Kártyával/i.test(x));
-    if (!regularLine || cardIndex < 0) continue;
-    const cardLine = after.slice(cardIndex + 1).find(x => /\d[\d .]*\s*Ft\b/i.test(x));
-    if (!cardLine) continue;
-
-    const regular = number(regularLine);
-    const price = number(cardLine);
-    if (!price || !regular || price > regular || price > 1_500_000) continue;
-
-    const unitPriceLine = after.slice(cardIndex + 1).find(x => /1\s*(?:KG|LT|L|DB)\s+\d[\d .]*\s*Ft/i.test(x));
-    const unitPrice = unitPriceLine ? number(unitPriceLine.replace(/^.*?1\s*(?:KG|LT|L|DB)/i, '')) : undefined;
-    const context = [...before, ...after];
-    const dates = context.map(parseIsoDate).filter((x): x is string => !!x);
-    const validFrom = dates[0] ?? range.start;
-    const validTo = dates[1] ?? range.end;
-
+    if(!name) continue;
+    const after=data.slice(i+1,i+12);
+    const regularLine=after.find(x=>/\d[\d .]*\s*Ft\b/i.test(x));
+    const cardIndex=after.findIndex(x=>/PENNY Kártyával/i.test(x));
+    if(!regularLine||cardIndex<0) continue;
+    const cardLine=after.slice(cardIndex+1).find(x=>/\d[\d .]*\s*Ft\b/i.test(x));
+    if(!cardLine) continue;
+    const regular=number(regularLine);
+    const price=number(cardLine);
+    if(!price||!regular||price>regular||price>1_500_000) continue;
+    const unitPriceLine=after.slice(cardIndex+1).find(x=>/1\s*(?:KG|LT|L|DB)\s+\d[\d .]*\s*Ft/i.test(x));
+    const unitPrice=unitPriceLine?number(unitPriceLine.replace(/^.*?1\s*(?:KG|LT|L|DB)/i,'')):undefined;
+    const context=[...before,...after];
+    const dates=context.map(parseIsoDate).filter((x):x is string=>!!x);
     offers.push({
-      id: `penny-${slug(name)}`,
+      id:'penny-'+slug(name),
       name,
-      category: categoryFor(name),
-      store: 'penny',
+      category:categoryFor(name),
+      store:'penny',
       price,
-      oldPrice: regular > price ? regular : undefined,
-      unitLabel: unitFrom(before),
+      oldPrice:regular>price?regular:undefined,
+      unitLabel:unitFrom(before),
       unitPrice,
-      unitPriceLabel: unitPriceLine ? unitPriceLabelFrom(unitPriceLine) : undefined,
-      validFrom,
-      validTo,
-      loyaltyOnly: true,
-      image: imageNear(html, name, url, placeholder('penny', name)),
-      sourceUrl: url
+      unitPriceLabel:unitPriceLine?unitPriceLabelFrom(unitPriceLine):undefined,
+      validFrom:dates[0]??range.start,
+      validTo:dates[1]??range.end,
+      loyaltyOnly:true,
+      conditionText:'PENNY Kártya',
+      image:imageNear(html,name,url,placeholder('penny',name)),
+      sourceUrl:url
     });
   }
-  return dedupe(offers);
+  return offers;
+}
+
+function parsePennyFeaturedPage(html:string,url:string,range:{start:string;end:string}):Offer[]{
+  const data=lines(html);
+  const offers:Offer[]=[];
+  for(let i=0;i<data.length;i++){
+    if(!/(20\d{2})[.\/-]\d{1,2}[.\/-]\d{1,2}-tól/i.test(data[i])) continue;
+    const before=data.slice(Math.max(0,i-7),i);
+    const name=[...before].reverse().find(x=>
+      x.length>=3&&x.length<=140 &&
+      !/kiemelt ajánlat|heti ajánlat|termék|csak most|^\d+(?:[.,]\d+)?\s*(?:kg|g|ml|lt|l|db)$/i.test(x)
+    );
+    if(!name) continue;
+    const after=data.slice(i+1,i+10);
+    if(after.some(x=>/PENNY Kártya nélkül|PENNY Kártyával/i.test(x))) continue;
+    const priceLines=after.filter(x=>/^\s*\d[\d .]*\s*Ft\s*$/i.test(x));
+    if(!priceLines.length) continue;
+    const price=number(priceLines[0]);
+    if(!price||price>1_500_000) continue;
+    const oldCandidates=priceLines.slice(1).map(number).filter(x=>x>price);
+    const oldPrice=oldCandidates[0];
+    const unitLine=after.find(x=>/1\s*(?:KG|LT|L|DB)\s+\d[\d .]*\s*Ft/i.test(x));
+    const unitPrice=unitLine?number(unitLine.replace(/^.*?1\s*(?:KG|LT|L|DB)/i,'')):undefined;
+    const from=parseIsoDate(data[i])??range.start;
+    const toLine=after.find(x=>/(20\d{2})[.\/-]\d{1,2}[.\/-]\d{1,2}-ig/i.test(x));
+    const to=toLine?parseIsoDate(toLine)??range.end:range.end;
+    offers.push({
+      id:'penny-'+slug(name),
+      name,
+      category:categoryFor(name),
+      store:'penny',
+      price,
+      oldPrice,
+      unitLabel:unitFrom(before),
+      unitPrice,
+      unitPriceLabel:unitLine?unitPriceLabelFrom(unitLine):undefined,
+      validFrom:from,
+      validTo:to,
+      image:imageNear(html,name,url,placeholder('penny',name)),
+      sourceUrl:url
+    });
+  }
+  return offers;
+}
+
+function parsePennyCoupons(html:string,url:string):Offer[]{
+  const data=lines(html);
+  const offers:Offer[]=[];
+  let currentRange:{start:string;end:string}|undefined;
+  for(const line of data){
+    if(/kuponok érvényessége/i.test(line)){
+      currentRange=pennyCouponRange(line)??currentRange;
+      continue;
+    }
+    const m=line.match(/^(.{3,180}?)\s+(\d[\d .]*)\s*Ft\s+helyett\s+(\d[\d .]*)\s*Ft(?:\s+További|$)/i);
+    if(!m||!currentRange) continue;
+    const name=m[1].trim();
+    const oldPrice=number(m[2]);
+    const price=number(m[3]);
+    if(!price||!oldPrice||price>=oldPrice) continue;
+    offers.push({
+      id:'penny-'+slug(name),
+      name,
+      category:categoryFor(name),
+      store:'penny',
+      price,
+      oldPrice,
+      unitLabel:unitFrom([name]),
+      validFrom:currentRange.start,
+      validTo:currentRange.end,
+      loyaltyOnly:true,
+      conditionText:'PENNY Kártya + digitális kupon',
+      image:imageNear(html,name,url,placeholder('penny',name)),
+      sourceUrl:url
+    });
+  }
+  return offers;
+}
+
+async function scrapePenny(source: RetailSource): Promise<Offer[]> {
+  const range=pennyRange();
+  const cardUrl='https://www.penny.hu/category/ajanlatok-'+range.key+'-koezoett-penny-kartyaval-olcsobb-termekek?pageSize=100';
+  const featuredUrl='https://www.penny.hu/?tab=kiemelt-ajanlataink';
+  const couponUrl='https://www.penny.hu/digikuponok';
+  const pages=await Promise.allSettled([
+    fetchHtml(cardUrl),
+    fetchHtml(featuredUrl),
+    fetchHtml(couponUrl)
+  ]);
+  const card=pages[0].status==='fulfilled'?parsePennyCardPage(pages[0].value,cardUrl,range):[];
+  const featured=pages[1].status==='fulfilled'?parsePennyFeaturedPage(pages[1].value,featuredUrl,range):[];
+  const coupons=pages[2].status==='fulfilled'?parsePennyCoupons(pages[2].value,couponUrl):[];
+  return dedupe([...featured,...card,...coupons]).slice(0,220);
 }
 
 async function scrapeDeichmann(source: RetailSource): Promise<Offer[]> {
@@ -430,6 +521,7 @@ function parseLidlPage(html: string, url: string) {
       validTo: range?.end ?? isoToday(),
       validityText: range ? undefined : 'Ma ellenőrizve',
       loyaltyOnly: true,
+      conditionText: 'Lidl Plus',
       image: imageNear(html, name, url, placeholder('lidl', name)),
       sourceUrl: url
     });
@@ -496,6 +588,7 @@ async function scrapeTesco(source: RetailSource): Promise<Offer[]> {
       validTo,
       validityText: parsedTescoValidTo ? undefined : 'Ma ellenőrizve',
       loyaltyOnly,
+      conditionText: loyaltyOnly ? 'Clubcard' : undefined,
       image: imageNear(html, name, url, placeholder('tesco', name)),
       sourceUrl: url
     });
@@ -839,6 +932,7 @@ async function scrapeDecathlon(source: RetailSource): Promise<Offer[]> {
       validTo,
       validityText: md ? undefined : 'Ma ellenőrizve',
       loyaltyOnly,
+      conditionText: loyaltyOnly ? 'Hűségkártyás ajánlat' : undefined,
       image: imageNear(html, name, source.url, placeholder('decathlon', name)),
       sourceUrl: source.url
     });

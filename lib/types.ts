@@ -20,6 +20,7 @@ export type Offer = {
   validTo: string;
   image: string;
   loyaltyOnly?: boolean;
+  conditionText?: string;
   sourceUrl?: string;
 };
 

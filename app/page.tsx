@@ -319,7 +319,7 @@ function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; qu
       <div className="results-list">
         {visible.map(o => <button className="result-card" key={o.id} onClick={()=>onSelect(o)}>
           <div className="result-image"><Image src={o.image} alt={o.name} fill sizes="88px"/></div>
-          <div className="result-main"><div className="result-top"><StoreBadge store={o.store} compact/>{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><strong>{o.name}</strong><small>{o.unitLabel} · {o.category}{o.unitPrice?` · ${money(o.unitPrice)}${o.unitPriceLabel||''}`:''}</small>{o.priceScope&&<em className="price-scope">{o.priceScope}</em>}</div>
+          <div className="result-main"><div className="result-top"><StoreBadge store={o.store} compact/>{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><strong>{o.name}</strong><small>{o.unitLabel} · {o.category}{o.unitPrice?` · ${money(o.unitPrice)}${o.unitPriceLabel||''}`:''}</small>{o.conditionText&&<em className="condition-note">{o.conditionText}</em>}{o.priceScope&&<em className="price-scope">{o.priceScope}</em>}</div>
           <div className="result-price"><b>{money(o.price)}</b>{o.oldPrice&&<del>{money(o.oldPrice)}</del>}<ChevronRight size={18}/></div>
         </button>)}
       </div>
@@ -335,11 +335,11 @@ function OfferDetail({ offer, allOffers, onBack, onWatch, watched }: { offer: Of
     <div className="screen detail-screen">
       <div className="detail-nav"><button className="icon-btn" onClick={onBack}><ArrowLeft/></button><div><button className="icon-btn" onClick={onWatch} aria-label={watched?'Figyelve':'Figyelés'}><Heart fill={watched?'currentColor':'none'}/></button>{offer.sourceUrl&&<a className="icon-btn" href={offer.sourceUrl} target="_blank" rel="noreferrer" aria-label="Forrás megnyitása"><ExternalLink/></a>}</div></div>
       <div className="hero-product"><Image src={offer.image} alt={offer.name} fill sizes="80vw" /></div>
-      <h1>{offer.name}</h1><p>{offer.unitLabel}</p>{offer.priceScope&&<div className="price-scope detail-scope">{offer.priceScope}</div>}
+      <h1>{offer.name}</h1><p>{offer.unitLabel}</p>{offer.conditionText&&<div className="condition-note detail-condition">{offer.conditionText}</div>}{offer.priceScope&&<div className="price-scope detail-scope">{offer.priceScope}</div>}
       <div className="segmented"><button className="active">Árak és üzletek</button><button>Árhistorika</button></div>
       <div className="compare-list">
         {[offer, ...comparable.filter(x=>x.id!==offer.id)].slice(0,5).map((o,i)=><div className="compare-row" key={o.id}>
-          <StoreBadge store={o.store}/><div><strong>{stores[o.store].name}</strong>{o.loyaltyOnly&&<small>Kártyás ár</small>}</div><div className="compare-price"><b>{money(o.price)}</b>{o.oldPrice&&<del>{money(o.oldPrice)}</del>}{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><Heart size={18}/>
+          <StoreBadge store={o.store}/><div><strong>{stores[o.store].name}</strong>{o.loyaltyOnly&&<small>{o.conditionText||'Kártyás ár'}</small>}</div><div className="compare-price"><b>{money(o.price)}</b>{o.oldPrice&&<del>{money(o.oldPrice)}</del>}{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><Heart size={18}/>
         </div>)}
       </div>
       <div className="deal-score"><BarChart3 size={31}/><div><strong>{history && history.samples > 1 ? 'Saját árhistorika' : 'Árhistorika épül'}</strong><span>Most: <b>{money(offer.price)}</b>{history && history.samples > 1 ? <><br/>Átlag: <b>{money(history.average)}</b> · minimum: <b>{money(history.minimum)}</b></> : <><br/>Az app csak valóban összegyűjtött korábbi árakból számol.</>}</span></div>{history && history.samples > 1 ? <div className="history-pending">{history.samples} nap<small>{offer.price < history.average ? 'átlag alatt' : 'mért adat'}</small></div> : <div className="history-pending">1. nap<small>adatgyűjtés</small></div>}</div>

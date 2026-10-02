@@ -231,7 +231,7 @@ function BrandHeader({ onBell }: { onBell?: () => void }) {
         <div className="brandmark"><span className="basket">🛒</span><strong>MULTI <em>AKCIÓK</em></strong></div>
         <button className="icon-btn" onClick={onBell} aria-label="Értesítések"><Bell size={22} /></button>
       </header>
-      <button className="location"><MapPin size={15} fill="currentColor" /> Magyarország <ChevronRight size={14} /></button>
+      <div className="location"><MapPin size={15} fill="currentColor" /> Magyarország</div>
     </>
   );
 }
@@ -247,7 +247,7 @@ function HomeView({ offers, campaigns, query, setQuery, onSelect, onWatch, watch
   ];
   return (
     <div className="screen home-screen">
-      <BrandHeader />
+      <BrandHeader onBell={()=>setTab('profile')} />
       <div className="searchbox"><Search size={19} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Keress terméket, márkát vagy üzletet..." /></div>
       {watchHits.length>0&&<div className="watch-banner"><div className="watch-banner-head"><Bell size={16}/><strong>Figyelt ajánlatok</strong><span>{watchHits.length}</span></div>{watchHits.slice(0,2).map(hit=><button key={hit.term} onClick={()=>onSelect(hit.offer)}><div><b>{hit.term}</b><small>{hit.status==='lower'?'Olcsóbb lett':hit.status==='new'?'Új találat':'Aktuális találat'} · {stores[hit.offer.store].name}</small></div><strong>{money(hit.offer.price)}</strong><ChevronRight size={16}/></button>)}</div>}
       <div className="stores-row">
@@ -632,7 +632,39 @@ function FullCard({ card, onClose }: { card:LoyaltyCard; onClose:()=>void }) {
   return <div className="full-card-screen"><div className="full-card-top"><button className="icon-btn" onClick={onClose}><X/></button><span>Pénztári nézet</span></div><div className="full-card-brand" style={{background:v.color,color:v.text}}><CardBadge card={card}/><h1>{card.label}</h1>{card.store==='custom'&&<small>{v.name}</small>}<p>{card.code}</p></div><div className="full-code"><CodeDisplay value={card.code} format={card.format} large/></div><p className="brightness-note">☀️ A képernyőt tartsd a leolvasó elé.</p></div>
 }
 
-function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWatchTerms,watchHits,onAddRetailer,onRemoveRetailer}:{customRetailers:CustomRetailer[];sourceStates:SourceState[];lastRefresh:string;watchTerms:string[];setWatchTerms:Dispatch<SetStateAction<string[]>>;watchHits:WatchHit[];onAddRetailer:()=>void;onRemoveRetailer:(id:string)=>void}){const [watchInput,setWatchInput]=useState('');function addWatch(){const value=watchInput.trim();if(!value)return;setWatchTerms(prev=>prev.some(x=>x.toLocaleLowerCase('hu')===value.toLocaleLowerCase('hu'))?prev:[...prev,value]);setWatchInput('');}return <div className="screen profile-screen"><BrandHeader/><div className="profile-hero"><div className="avatar"><UserRound/></div><h1>MULTI AKCIÓK</h1><p>Saját bevásárlási asszisztens</p></div><div className="settings-list"><button><Heart/> Figyelőlista <ChevronRight/></button><button><Bell/> Értesítések <ChevronRight/></button><button><Tag/> Árhistorika <ChevronRight/></button><button onClick={onAddRetailer}><Plus/> Üzlet / forrás hozzáadása <ChevronRight/></button></div><div className="watch-panel"><div className="section-title"><h2>Figyelőlista</h2><small>{watchTerms.length} figyelés</small></div><div className="watch-input"><input value={watchInput} onChange={e=>setWatchInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addWatch()}} placeholder="pl. vaj, lazac, futócipő"/><button onClick={addWatch}><Plus size={17}/></button></div>{watchTerms.length===0?<p className="watch-empty">Adj hozzá terméket vagy márkát, és frissítéskor megkeressük a legjobb aktuális ajánlatot.</p>:<div className="watch-chips">{watchTerms.map(term=>{const hit=watchHits.find(x=>x.term===term);return <div className="watch-chip" key={term}><div><b>{term}</b><small>{hit?stores[hit.offer.store].name+' · '+money(hit.offer.price):'Nincs aktuális találat'}</small></div><button onClick={()=>setWatchTerms(prev=>prev.filter(x=>x!==term))}><X size={14}/></button></div>})}</div>}</div><div className="source-panel"><div className="section-title"><h2>Mai adatforrások</h2><small>{lastRefresh?new Date(lastRefresh).toLocaleTimeString('hu-HU',{hour:'2-digit',minute:'2-digit'}):''}</small></div>{sourceStates.map(s=><div className="source-row" key={s.id}><span className={s.ok&&s.count>0?'source-dot ok':s.ok?'source-dot warn':'source-dot bad'}/><div><b>{s.name}</b><small>{s.count>0?`${s.count} ajánlat`:s.note||'Nincs adat'}</small></div><a href={s.url} target="_blank" rel="noreferrer"><ExternalLink size={15}/></a></div>)}</div>{customRetailers.length>0&&<div className="custom-retailers-panel"><div className="section-title"><h2>Saját üzletek</h2></div>{customRetailers.map(r=><div className="custom-retailer-row" key={r.id}><span style={{background:r.color}}>{r.name.slice(0,2).toUpperCase()}</span><div><b>{r.name}</b><small>{r.url||'Saját üzlet'}</small></div><button onClick={()=>onRemoveRetailer(r.id)} aria-label="Törlés"><Trash2 size={17}/></button></div>)}</div>}</div>}
+function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWatchTerms,watchHits,onAddRetailer,onRemoveRetailer}:{customRetailers:CustomRetailer[];sourceStates:SourceState[];lastRefresh:string;watchTerms:string[];setWatchTerms:Dispatch<SetStateAction<string[]>>;watchHits:WatchHit[];onAddRetailer:()=>void;onRemoveRetailer:(id:string)=>void}){
+  const [watchInput,setWatchInput]=useState('');
+  function addWatch(){
+    const value=watchInput.trim();
+    if(!value)return;
+    setWatchTerms(prev=>prev.some(x=>sameWatchTerm(x,value))?prev:[...prev,value]);
+    setWatchInput('');
+  }
+  const scrollTo=(id:string)=>document.getElementById(id)?.scrollIntoView({behavior:'smooth',block:'start'});
+  return <div className="screen profile-screen">
+    <BrandHeader onBell={()=>scrollTo('watch-panel')}/>
+    <div className="profile-hero"><div className="avatar"><UserRound/></div><h1>MULTI AKCIÓK</h1><p>Saját bevásárlási asszisztens</p></div>
+    <div className="settings-list">
+      <button onClick={()=>scrollTo('watch-panel')}><Heart/> Figyelőlista <ChevronRight/></button>
+      <button onClick={()=>scrollTo('source-panel')}><RefreshCw/> Adatforrások <ChevronRight/></button>
+      <button onClick={onAddRetailer}><Plus/> Üzlet / forrás hozzáadása <ChevronRight/></button>
+    </div>
+
+    <div className="watch-panel" id="watch-panel">
+      <div className="section-title"><h2>Figyelőlista</h2><small>{watchTerms.length} figyelés</small></div>
+      <div className="watch-input"><input value={watchInput} onChange={e=>setWatchInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addWatch()}} placeholder="pl. vaj, lazac, futócipő"/><button onClick={addWatch}><Plus size={17}/></button></div>
+      {watchTerms.length===0?<p className="watch-empty">Adj hozzá terméket vagy márkát, és frissítéskor megkeressük a legjobb aktuális ajánlatot.</p>:<div className="watch-chips">{watchTerms.map(term=>{const hit=watchHits.find(x=>x.term===term);return <div className="watch-chip" key={term}><div><b>{term}</b><small>{hit?stores[hit.offer.store].name+' · '+money(hit.offer.price):'Nincs aktuális találat'}</small></div><button onClick={()=>setWatchTerms(prev=>prev.filter(x=>x!==term))}><X size={14}/></button></div>})}</div>}
+      <p className="feature-note"><Bell size={13}/> Az appon belüli figyelés működik. Háttér push értesítést csak a külön szerveres értesítési réteg bekötése után jelölünk aktívnak.</p>
+    </div>
+
+    <div className="source-panel" id="source-panel">
+      <div className="section-title"><h2>Mai adatforrások</h2><small>{lastRefresh?new Date(lastRefresh).toLocaleTimeString('hu-HU',{hour:'2-digit',minute:'2-digit'}):''}</small></div>
+      {sourceStates.map(s=><div className="source-row" key={s.id}><span className={s.ok&&s.count>0?'source-dot ok':s.ok?'source-dot warn':'source-dot bad'}/><div><b>{s.name}</b><small>{s.count>0?s.count+' ajánlat':s.note||'Nincs adat'}</small></div><a href={s.url} target="_blank" rel="noreferrer"><ExternalLink size={15}/></a></div>)}
+    </div>
+
+    {customRetailers.length>0&&<div className="custom-retailers-panel"><div className="section-title"><h2>Saját üzletek</h2></div>{customRetailers.map(r=><div className="custom-retailer-row" key={r.id}><span style={{background:r.color}}>{r.name.slice(0,2).toUpperCase()}</span><div><b>{r.name}</b><small>{r.url||'Saját üzlet'}</small></div><button onClick={()=>onRemoveRetailer(r.id)} aria-label="Törlés"><Trash2 size={17}/></button></div>)}</div>}
+  </div>
+}
 
 function BottomNav({tab,setTab}:{tab:Tab;setTab:(t:Tab)=>void}){
   const items:[Tab,ReactNode,string][]=[['home',<Home key="h"/>,'Kezdőlap'],['search',<Search key="s"/>,'Keresés'],['list',<ListChecks key="l"/>,'Lista'],['cards',<CreditCard key="c"/>,'Kártyák'],['profile',<UserRound key="p"/>,'Profil']];

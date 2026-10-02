@@ -1,3 +1,4 @@
+import { load } from 'cheerio';
 import type { Offer, StoreId } from '@/lib/types';
 import type { RetailSource } from './scrape';
 
@@ -122,6 +123,43 @@ async function fetchHtml(url: string) {
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.text();
 }
+
+const SOURCE_PROXY_URL = 'https://wopluslqeihwlnolfypm.supabase.co/functions/v1/multi-akciok-source-proxy';
+const SOURCE_PROXY_KEY = 'sb_publishable_f4FFiku_vqYePp8h1bXzcg_7iqRYlti';
+
+async function fetchSourceProxy(source: 'spar' | 'auchan-weekly') {
+  const response = await fetch(SOURCE_PROXY_URL, {
+    method: 'POST',
+    headers: {
+      apikey: SOURCE_PROXY_KEY,
+      Authorization: `Bearer ${SOURCE_PROXY_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ source }),
+    cache: 'no-store',
+    signal: AbortSignal.timeout(25_000)
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300);
+    throw new Error(`Forrás-proxy hiba: ${response.status} ${detail}`);
+  }
+  return response;
+}
+
+function budapestDateFromEpoch(value: unknown) {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Budapest',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date(seconds * 1000));
+  const get = (type: string) => parts.find(x => x.type === type)?.value;
+  const y = get('year'), m = get('month'), d = get('day');
+  return y && m && d ? `${y}-${m}-${d}` : undefined;
+}
+
 
 function pennyRange(now = new Date()) {
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -329,62 +367,91 @@ function absoluteUrl(href: string, base: string) {
   try { return new URL(href, base).toString(); } catch { return undefined; }
 }
 
-function discoverAuchanLinks(html: string) {
-  const found = new Set<string>();
-  const re = /href=["']([^"']*\/shop\/list\/[^"']+)["']/gi;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(html))) {
-    const url = absoluteUrl(match[1], 'https://auchan.hu');
-    if (url) found.add(url);
-    if (found.size >= 3) break;
+type AuchanWeeklyPayload = {
+  catalog: { id:number; title:string; validFrom:string; validTo:string; cover?:string; sourceUrl:string };
+  pageTexts: string[];
+};
+
+type AuchanPricePair = { oldPrice:number; price:number; oldUnit?:string; newUnit?:string };
+
+function auchanPricePairs(text:string) {
+  const pairs: AuchanPricePair[] = [];
+  const re=/-\d{1,2}\s*%\s*([\d\s.\u00a0\u2000-\u200b\u202f]+)\s*Ft(?:\s*\/\s*(10\s*dkg|kg|l|db))?\s*Bizalomkártyával:\s*([\d\s.\u00a0\u2000-\u200b\u202f]+)\s*Ft(?:\s*\/\s*(10\s*dkg|kg|l|db))?/gi;
+  let m:RegExpExecArray|null;
+  while((m=re.exec(text))){
+    const oldPrice=number(m[1]);
+    const price=number(m[3]);
+    if(!price||!oldPrice||price>=oldPrice||price>1_500_000) continue;
+    pairs.push({oldPrice,price,oldUnit:m[2]?.replace(/\s+/g,' '),newUnit:m[4]?.replace(/\s+/g,' ')});
   }
-  return [...found];
+  return pairs;
 }
 
-function parseAuchanPage(html: string, url: string) {
-  const data = lines(html);
-  const offers: Offer[] = [];
-  for (let i = 0; i < data.length; i++) {
-    if (!/^Termék:/i.test(data[i])) continue;
-    const name = data[i].replace(/^Termék:\s*/i, '').trim();
-    if (!name) continue;
-    const after = data.slice(i + 1, i + 12);
-    const priceLine = after.find(x => /^Ár\s+\d|\bÁr\s+\d/i.test(x));
-    if (!priceLine) continue;
-    const price = number(priceLine);
-    if (!price || price > 1_500_000) continue;
-    const oldLine = after.find(x => /Eredeti ár/i.test(x));
-    const oldPrice = oldLine ? number(oldLine) : undefined;
-    const unitLine = after.find(x => /Egységár/i.test(x));
-    const unitMatch = unitLine?.match(/([\d\s.]+)\s*Ft\s*\/\s*(kg|l|lt|db|darab|m2|m²|liter)/i);
-    const unitPrice = unitMatch ? number(unitMatch[1]) : undefined;
-
-    offers.push({
-      id: `auchan-${slug(name)}`,
-      name,
-      category: categoryFor(name),
-      store: 'auchan',
-      price,
-      oldPrice: oldPrice && oldPrice > price ? oldPrice : undefined,
-      unitLabel: unitFrom(after),
-      unitPrice,
-      unitPriceLabel: unitLine ? unitPriceLabelFrom(unitLine) : undefined,
-      validFrom: isoToday(),
-      validTo: isoToday(),
-      validityText: 'Ma ellenőrizve',
-      image: imageNear(html, name, url, placeholder('auchan', name)),
-      sourceUrl: url
-    });
+function auchanProductCandidates(text:string) {
+  const candidates:Array<{name:string;index:number}>=[];
+  const re=/\b([A-ZÁÉÍÓÖŐÚÜŰ][A-ZÁÉÍÓÖŐÚÜŰ0-9&+./'’() *-]{3,}?)(?=\s+(?:Ft\/|[a-záéíóöőúüű]|\d))/g;
+  let m:RegExpExecArray|null;
+  while((m=re.exec(text))){
+    const name=m[1].replace(/\s+/g,' ').replace(/[ *.-]+$/g,'').trim();
+    if(name.length<4||name.length>150) continue;
+    if(/BIZALOM|KEDVEZMÉNY|PROMÓCIÓ|RÉSZLETEK|ÉRVÉNYES|FAGYASZTOTT TERMÉK|TÉNYLEG ENNYI/i.test(name)) continue;
+    candidates.push({name,index:m.index});
   }
-  return offers;
+  return candidates;
+}
+
+function parseAuchanWeeklyPage(text:string,pageIndex:number,payload:AuchanWeeklyPayload):Offer[]{
+  const codes=[...text.matchAll(/\b(\d{4,6}_(?:SS|MS|MM))\b/g)].map(x=>x[1]);
+  const pairs=auchanPricePairs(text);
+  if(!codes.length||pairs.length!==codes.length) return [];
+
+  let lastPairEnd=0;
+  const pairEndRe=/-\d{1,2}\s*%\s*[\d\s.\u00a0\u2000-\u200b\u202f]+\s*Ft(?:\s*\/\s*(?:10\s*dkg|kg|l|db))?\s*Bizalomkártyával:\s*[\d\s.\u00a0\u2000-\u200b\u202f]+\s*Ft(?:\s*\/\s*(?:10\s*dkg|kg|l|db))?/gi;
+  let pm:RegExpExecArray|null;
+  while((pm=pairEndRe.exec(text))) lastPairEnd=pm.index+pm[0].length;
+  if(!lastPairEnd) return [];
+
+  const suffix=text.slice(lastPairEnd);
+  const names=auchanProductCandidates(suffix);
+  if(names.length<codes.length) return [];
+
+  return codes.map((code,i)=>{
+    const candidate=names[i];
+    const next=names[i+1];
+    const block=suffix.slice(candidate.index,next?.index??suffix.length);
+    const pair=pairs[i];
+    const unitLine=block.match(/Bizalom[^:]{0,24}:\s*([\d\s.\u00a0\u2000-\u200b\u202f]+)\s*Ft\s*\/\s*(kg|l|db)/i);
+    const unitPrice=unitLine?number(unitLine[1]):undefined;
+    const unitPriceLabel=unitLine?'/'+unitLine[2].toLowerCase():pair.newUnit?'/'+pair.newUnit.toLowerCase():undefined;
+    const unitLabel=unitFrom([block]);
+
+    return {
+      id:`auchan-${code.toLowerCase()}`,
+      name:candidate.name,
+      category:categoryFor(candidate.name),
+      store:'auchan' as const,
+      price:pair.price,
+      oldPrice:pair.oldPrice,
+      unitLabel,
+      unitPrice,
+      unitPriceLabel,
+      priceScope:pair.newUnit?`Ár / ${pair.newUnit}`:undefined,
+      validFrom:payload.catalog.validFrom||isoToday(),
+      validTo:payload.catalog.validTo||isoToday(),
+      loyaltyOnly:true,
+      conditionText:'Auchan Bizalomkártyával',
+      image:placeholder('auchan',candidate.name),
+      sourceUrl:payload.catalog.sourceUrl
+    };
+  });
 }
 
 async function scrapeAuchan(source: RetailSource): Promise<Offer[]> {
-  const home = await fetchHtml(source.url);
-  const links = discoverAuchanLinks(home);
-  if (!links.length) return [];
-  const pages = await Promise.all(links.map(async url => ({ url, html: await fetchHtml(url) })));
-  return dedupe(pages.flatMap(x => parseAuchanPage(x.html, x.url))).slice(0, 120);
+  const response=await fetchSourceProxy('auchan-weekly');
+  const payload=await response.json() as AuchanWeeklyPayload;
+  if(!payload?.catalog||!Array.isArray(payload.pageTexts)) return [];
+  const offers=payload.pageTexts.flatMap((text,index)=>parseAuchanWeeklyPage(String(text||''),index,payload));
+  return dedupe(offers).slice(0,180);
 }
 
 function dedupe(offers: Offer[]) {
@@ -430,7 +497,12 @@ function parseAldiDateRange(text: string) {
 }
 
 async function scrapeAldi(source: RetailSource): Promise<Offer[]> {
-  const html=await fetchHtml(source.url);
+  let html:string;
+  try { html=await fetchHtml(source.url); }
+  catch (error) {
+    if(error instanceof Error && /HTTP 403/.test(error.message)) throw new Error('Akamai-védelem blokkolja a szerveres adatlekérést.');
+    throw error;
+  }
   const data=lines(html);
   const offers:Offer[]=[];
   let current={start:isoToday(),end:isoFuture(7)};
@@ -488,58 +560,82 @@ function discoverLidlPlusUrl(html: string) {
 }
 
 function parseLidlPage(html: string, url: string) {
-  const data = lines(html);
-  const offers: Offer[] = [];
-  for (let i = 0; i < data.length; i++) {
-    if (!/Lidl Plus-szal/i.test(data[i])) continue;
-    const before = data.slice(Math.max(0,i-9), i);
-    const after = data.slice(i+1, i+10);
-    const oldLine = [...before].reverse().find(x => /\d[\d .]*\s*Ft/i.test(x));
-    const priceLine = after.find(x => /\d[\d .]*\s*Ft/i.test(x));
-    if (!priceLine) continue;
-    const price = number(priceLine);
-    const oldPrice = oldLine ? number(oldLine) : undefined;
-    if (!price || price > 1_500_000) continue;
+  const $=load(html);
+  const offers:Offer[]=[];
+  const seen=new Set<string>();
 
-    const name = [...before].reverse().find(x =>
-      x.length >= 2 && x.length <= 120 &&
-      !/Ft|Rendered:|Ajánlat|Lidl Plus|Image:|kedvezmény|^-?\d+%/i.test(x) &&
-      !/^[A-ZÁÉÍÓÖŐÚÜŰ0-9 &'’.-]{2,28}$/.test(x)
-    ) ?? [...before].reverse().find(x => x.length >= 2 && x.length <= 120 && !/Ft|Rendered:|Ajánlat|Image:/i.test(x));
-    if (!name) continue;
+  $('[data-grid-data]').each((_,element)=>{
+    const raw=$(element).attr('data-grid-data');
+    if(!raw) return;
+    try{
+      const data=JSON.parse(raw) as {
+        productId?:number|string;
+        fullTitle?:string;
+        title?:string;
+        image?:string;
+        canonicalUrl?:string;
+        category?:string;
+        storeStartDate?:number;
+        storeEndDate?:number;
+        brand?:{name?:string};
+        lidlPlus?:Array<{
+          lidlPlusText?:string;
+          price?:{
+            price?:number;
+            oldPrice?:number;
+            basePrice?:{text?:string};
+            discount?:{deletedPrice?:number}
+          }
+        }>;
+      };
+      const plus=Array.isArray(data.lidlPlus)?data.lidlPlus[0]:undefined;
+      const price=Math.round(Number(plus?.price?.price||0));
+      if(!price||price<20||price>1_500_000) return;
+      const name=String(data.fullTitle||data.title||'').trim();
+      if(name.length<2||name.length>180) return;
+      const productId=String(data.productId||slug(name));
+      const id=`lidl-${productId}`;
+      if(seen.has(id)) return;
+      seen.add(id);
 
-    const rangeLine = after.find(x => /Ajánlat érvényes:/i.test(x)) ?? before.find(x => /Ajánlat érvényes:/i.test(x));
-    const range = rangeLine ? parseMonthDayRange(rangeLine) : undefined;
-    const unitPriceLine = after.find(x => /1\s*(?:kg|l|db)\s*=\s*\d[\d .]*\s*Ft/i.test(x));
-    const unitPrice = unitPriceLine ? number(unitPriceLine.split('=')[1] ?? '') : undefined;
+      const oldRaw=Number(plus?.price?.oldPrice??plus?.price?.discount?.deletedPrice??0);
+      const oldPrice=Number.isFinite(oldRaw)&&oldRaw>price?Math.round(oldRaw):undefined;
+      const baseText=String(plus?.price?.basePrice?.text||'');
+      const unitPriceMatch=baseText.match(/1\s*(kg|l|db)\s*=\s*([\d\s.]+)\s*Ft/i);
+      const unitPrice=unitPriceMatch?number(unitPriceMatch[2]):undefined;
+      const pack=baseText.split(';')[0]?.trim();
+      const unitLabel=pack&&/\d/.test(pack)?pack:unitFrom([name,baseText]);
+      const canonical=data.canonicalUrl?absoluteUrl(data.canonicalUrl,'https://www.lidl.hu'):url;
 
-    offers.push({
-      id: `lidl-${slug(name)}`,
-      name,
-      category: categoryFor(name),
-      store: 'lidl',
-      price,
-      oldPrice: oldPrice && oldPrice > price ? oldPrice : undefined,
-      unitLabel: unitFrom(after),
-      unitPrice,
-      unitPriceLabel: unitPriceLine ? unitPriceLabelFrom(unitPriceLine) : undefined,
-      validFrom: range?.start ?? isoToday(),
-      validTo: range?.end ?? isoToday(),
-      validityText: range ? undefined : 'Ma ellenőrizve',
-      loyaltyOnly: true,
-      conditionText: 'Lidl Plus',
-      image: imageNear(html, name, url, placeholder('lidl', name)),
-      sourceUrl: url
-    });
-  }
-  return dedupe(offers).slice(0,120);
+      offers.push({
+        id,
+        name,
+        category:categoryFor(name),
+        store:'lidl',
+        price,
+        oldPrice,
+        unitLabel,
+        unitPrice,
+        unitPriceLabel:unitPriceMatch?'/'+unitPriceMatch[1].toLowerCase():undefined,
+        validFrom:budapestDateFromEpoch(data.storeStartDate)??isoToday(),
+        validTo:budapestDateFromEpoch(data.storeEndDate)??isoToday(),
+        loyaltyOnly:true,
+        conditionText:String(plus?.lidlPlusText||'Lidl Plus'),
+        image:data.image||placeholder('lidl',name),
+        sourceUrl:canonical
+      });
+    }catch{
+      // A hibás termékkártya ne állítsa le a többi ajánlat feldolgozását.
+    }
+  });
+
+  return dedupe(offers).slice(0,180);
 }
 
-async function scrapeLidl(source: RetailSource): Promise<Offer[]> {
-  const home = await fetchHtml(source.url);
-  const url = discoverLidlPlusUrl(home) ?? 'https://www.lidl.hu/c/lidl-plus-ajanlataink/a10050097';
-  const html = url === source.url ? home : await fetchHtml(url);
-  return parseLidlPage(html, url);
+async async function scrapeLidl(source: RetailSource): Promise<Offer[]> {
+  const url='https://www.lidl.hu/c/lidl-plus-ajanlataink/a10050097';
+  const html=await fetchHtml(url);
+  return parseLidlPage(html,url);
 }
 
 function parseTescoDate(text: string) {
@@ -924,7 +1020,12 @@ async function scrapeJysk(source: RetailSource): Promise<Offer[]> {
 }
 
 async function scrapeDecathlon(source: RetailSource): Promise<Offer[]> {
-  const html = await fetchHtml(source.url);
+  let html:string;
+  try { html=await fetchHtml(source.url); }
+  catch (error) {
+    if(error instanceof Error && /HTTP 403/.test(error.message)) throw new Error('Cloudflare-védelem blokkolja a szerveres adatlekérést.');
+    throw error;
+  }
   const data = lines(html);
   const offers: Offer[] = [];
 
@@ -989,8 +1090,9 @@ function sparPackPrice(rate:number,rateUnit:string,qty:number,qtyUnit:string){
   return undefined;
 }
 
-async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
-  const html=await fetchHtml(source.url);
+async async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
+  const proxy=await fetchSourceProxy('spar');
+  const html=await proxy.text();
   const data=lines(html);
   const header=data.find(x=>/Aktuális ajánlataink/i.test(x));
   const range=header?parseMonthDayRange(header):undefined;
@@ -1018,7 +1120,6 @@ async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
       const rate=sparMoneyNumber(m[1]);
       return rate?{index,rate,unit:m[2].toLowerCase(),line}:null;
     }).filter((x):x is {index:number;rate:number;unit:string;line:string}=>!!x);
-
     if(!rateRows.length) continue;
 
     const conditionRow=after.map((line,index)=>{
@@ -1038,7 +1139,6 @@ async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
     const chosenRate=promoRate??regularRate;
     const price=sparPackPrice(chosenRate.rate,chosenRate.unit,qty,qtyUnit);
     if(!price||price<20||price>1_500_000) continue;
-
     const regularPack=sparPackPrice(regularRate.rate,regularRate.unit,qty,qtyUnit);
     const hasMulti=!!(conditionRow&&promoRate&&regularPack&&regularPack>price);
     const conditionText=hasMulti
@@ -1068,12 +1168,6 @@ async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
   }
   return dedupe(offers).slice(0,180);
 }
-
-
-const pharmacyMonths:Record<string,number>={
-  januar:1,februar:2,marcius:3,aprilis:4,majus:5,junius:6,julius:7,augusztus:8,
-  szeptember:9,oktober:10,november:11,december:12
-};
 
 function asciiHu(value:string){
   return value.toLocaleLowerCase('hu').normalize('NFD').replace(/[\u0300-\u036f]/g,'');

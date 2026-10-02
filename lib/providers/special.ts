@@ -1111,7 +1111,7 @@ async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
     if(!q) continue;
 
     const qty=Number(q[1].replace(',','.'));
-    const qtyUnit=q[2].toLowerCase();
+    const qtyUnit=(q[2]||'db').toLowerCase();
     if(!Number.isFinite(qty)||qty<=0) continue;
 
     const rateRows=after.map((line,index)=>{

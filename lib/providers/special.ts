@@ -513,7 +513,7 @@ async function fetchAldiOffersHtml() {
 
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 300);
-    throw new Error(\`ALDI akciós forrás-RPC hiba: \${response.status} \${detail}\`);
+    throw new Error('ALDI akciós forrás-RPC hiba: ' + response.status + ' ' + detail);
   }
 
   const html = await response.json();
@@ -524,129 +524,49 @@ async function fetchAldiOffersHtml() {
 }
 
 async function scrapeAldi(source: RetailSource): Promise<Offer[]> {
-  const html=await fetchAldiOffersHtml();
-  const data=lines(html);
-  const offers:Offer[]=[];
-  let current={start:isoToday(),end:isoToday()};
+  const html = await fetchAldiOffersHtml();
+  const data = lines(html);
+  const offers: Offer[] = [];
+  let current = { start: isoToday(), end: isoToday() };
 
-  for(let i=0;i<data.length;i++){
-    const range=parseAldiDateRange(data[i]);
-    if(range){ current=range; continue; }
-    if(!/Cikkszám:/i.test(data[i])) continue;
+  for (let i = 0; i < data.length; i++) {
+    const range = parseAldiDateRange(data[i]);
+    if (range) { current = range; continue; }
+    if (!/Cikkszám:/i.test(data[i])) continue;
 
-    const unitPrice=parseAldiUnitPrice(data[i]);
-    if(!unitPrice) continue;
+    const unitPrice = parseAldiUnitPrice(data[i]);
+    if (!unitPrice) continue;
 
-    const before=data.slice(Math.max(0,i-4),i);
-    const name=[...before].reverse().find(x=>
-      x.length>=3 && x.length<=150 &&
+    const before = data.slice(Math.max(0, i - 4), i);
+    const name = [...before].reverse().find(x =>
+      x.length >= 3 && x.length <= 150 &&
       /(\/kg|\/darab|\/csomag|\/doboz|\/palack|\/üveg|\/tálca|\/vödör|\/pohár|\/szál|\/csokor|\b\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l)\b)/i.test(x) &&
       !/Cikkszám|Ft\//i.test(x)
     );
-    if(!name) continue;
+    if (!name) continue;
 
-    const price=aldiPackPrice(name,unitPrice);
-    if(!price || price<20 || price>1_500_000) continue;
+    const price = aldiPackPrice(name, unitPrice);
+    if (!price || price < 20 || price > 1_500_000) continue;
 
-    const sku=data[i].match(/Cikkszám:\s*(\d+)/i)?.[1];
+    const sku = data[i].match(/Cikkszám:\s*(\d+)/i)?.[1];
     offers.push({
-      id:sku?\`aldi-\${sku}\`:\`aldi-\${slug(name)}\`,
+      id: sku ? 'aldi-' + sku : 'aldi-' + slug(name),
       name,
-      category:categoryFor(name),
-      store:'aldi',
+      category: categoryFor(name),
+      store: 'aldi',
       price,
-      unitLabel:unitFrom([name]),
-      unitPrice:Math.round(unitPrice.value*100)/100,
-      unitPriceLabel:'/'+(unitPrice.unit==='darab'?'db':unitPrice.unit),
-      validFrom:current.start,
-      validTo:current.end,
-      image:imageNear(html,name,source.url,placeholder('aldi',name)),
-      sourceUrl:source.url
+      unitLabel: unitFrom([name]),
+      unitPrice: Math.round(unitPrice.value * 100) / 100,
+      unitPriceLabel: '/' + (unitPrice.unit === 'darab' ? 'db' : unitPrice.unit),
+      validFrom: current.start,
+      validTo: current.end,
+      image: imageNear(html, name, source.url, placeholder('aldi', name)),
+      sourceUrl: source.url
     });
   }
 
-  return dedupe(offers).slice(0,180);
+  return dedupe(offers).slice(0, 180);
 }
-
-
-function decimalNumber(value:string){
-  const normalized=value
-    .replace(/\u00a0/g,' ')
-    .replace(/\s/g,'')
-    .replace(/\.(?=\d{3}(?:\D|$))/g,'')
-    .replace(',','.')
-    .replace(/[^\d.]/g,'');
-  const n=Number(normalized);
-  return Number.isFinite(n)?n:undefined;
-}
-
-async function scrapeAldi(source: RetailSource): Promise<Offer[]> {
-  const html=await fetchAldiProductsHtml();
-  const $=load(html);
-  const offers:Offer[]=[];
-
-  $('.product-tile').each((_:number,element:any)=>{
-    const card=$(element);
-    const brand=card.find('[data-test="product-tile__brandname"]').first().text().replace(/\s+/g,' ').trim();
-    const rawName=card.find('[data-test="product-tile__name"]').first().text().replace(/\s+/g,' ').trim();
-    if(rawName.length<2||rawName.length>190) return;
-
-    const name=brand && !rawName.toLocaleLowerCase('hu').startsWith(brand.toLocaleLowerCase('hu'))
-      ? \`\${brand} \${rawName}\`
-      : rawName;
-
-    const priceText=card.find('[data-test="product-tile__price"] .base-price__regular').first().text();
-    const price=number(priceText);
-    if(!price||price<20||price>1_500_000) return;
-
-    const unitLabel=card.find('[data-test="product-tile__unit-of-measurement"]').first().text().replace(/\s+/g,' ').trim() || unitFrom([rawName]);
-    const comparison=card.find('[data-test="product-tile__comparison-price"]').first().text().replace(/\s+/g,' ').trim();
-    const unitMatch=comparison.match(/([\d\s.,]+)\s*Ft\s*\/\s*1\s*(kg|l|darab|db)\b/i);
-    const unitPrice=unitMatch?decimalNumber(unitMatch[1]):undefined;
-    const unitPriceLabel=unitMatch?'/'+unitMatch[2].toLowerCase().replace('darab','db'):undefined;
-
-    const tileText=card.text().replace(/\s+/g,' ').trim();
-    const available=tileText.match(/Kapható\s+(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})-től/i);
-    const validFrom=available
-      ? \`\${available[1]}-\${available[2].padStart(2,'0')}-\${available[3].padStart(2,'0')}\`
-      : isoToday();
-
-    const href=card.find('a.product-tile__link').first().attr('href');
-    const sourceUrl=href?absoluteUrl(href,source.url):source.url;
-    const rawImage=card.find('img').first().attr('src');
-    const image=rawImage?absoluteUrl(rawImage,source.url):undefined;
-
-    const wrapper=card.closest('.product-teaser-item');
-    const tileId=wrapper.attr('id')?.replace(/^product-tile-/,'');
-    const conditionText=/Amíg a készlet tart/i.test(tileText)?'Készlet erejéig':available?'Későbbi elérhetőség':undefined;
-    const validityText=/Amíg a készlet tart/i.test(tileText)
-      ? 'Készlet erejéig · ma ellenőrizve'
-      : available
-        ? \`Kapható \${validFrom}-től\`
-        : 'Ma ellenőrizve';
-
-    offers.push({
-      id:tileId?\`aldi-\${tileId}\`:\`aldi-\${slug(name)}\`,
-      name,
-      category:categoryFor(name),
-      store:'aldi',
-      price,
-      unitLabel,
-      unitPrice:unitPrice!==undefined?Math.round(unitPrice*100)/100:undefined,
-      unitPriceLabel,
-      validFrom,
-      validTo:isoToday(),
-      validityText,
-      conditionText,
-      image:image??placeholder('aldi',name),
-      sourceUrl
-    });
-  });
-
-  return dedupe(offers).slice(0,120);
-}
-
-
 function parseMonthDayRange(text: string) {
   const m = text.match(/(\d{1,2})[.\/-](\d{1,2})\.?\s*-\s*(\d{1,2})[.\/-](\d{1,2})/);
   if (!m) return undefined;
@@ -1125,68 +1045,60 @@ async function scrapeJysk(source: RetailSource): Promise<Offer[]> {
 }
 
 async function scrapeDecathlon(source: RetailSource): Promise<Offer[]> {
-  const proxy=await fetchSourceProxy('decathlon-sale');
-  const html=await proxy.text();
-  const $=load(html);
-  const offers:Offer[]=[];
+  const proxy = await fetchSourceProxy('decathlon-sale');
+  const html = await proxy.text();
+  const $ = load(html);
+  const offers: Offer[] = [];
 
-  $('article.product-card').each((_:number,element:any)=>{
-    const card=$(element);
-    const titleLink=card.find('.product-card-details__item__title a').first();
-    const name=titleLink.text().replace(/\s+/g,' ').trim();
-    if(name.length<4||name.length>220) return;
+  $('article.product-card').each((_: number, element: any) => {
+    const card = $(element);
+    const titleLink = card.find('.product-card-details__item__title a').first();
+    const name = titleLink.text().replace(/\s+/g, ' ').trim();
+    if (name.length < 4 || name.length > 220) return;
 
-    const priceText=card.find('.vp-price-amount--sale').first().text();
-    const price=number(priceText);
-    if(!price||price<100||price>2_000_000) return;
+    const price = number(card.find('.vp-price-amount--sale').first().text());
+    if (!price || price < 100 || price > 2_000_000) return;
 
-    const oldText=card.find('.vp-price-barred-amount').first().text();
-    const oldPrice=number(oldText);
-    const sticker=card.find('.product-card__sticker').text().replace(/\s+/g,' ').trim();
-    const cardText=card.text().replace(/\s+/g,' ').trim();
+    const oldPriceRaw = number(card.find('.vp-price-barred-amount').first().text());
+    const sticker = card.find('.product-card__sticker').text().replace(/\s+/g, ' ').trim();
+    const cardText = card.text().replace(/\s+/g, ' ').trim();
+    const href = titleLink.attr('href');
+    const productId = href?.match(/R-p-(\d+)/i)?.[1] ?? href?.match(/[?&]mc=(\d+)/i)?.[1];
+    const sourceUrl = href ? absoluteUrl(href, 'https://www.decathlon.hu') : source.url;
+    const rawImage = card.find('.product-card-image__img').first().attr('src');
+    const image = rawImage ? absoluteUrl(rawImage, 'https://www.decathlon.hu') : undefined;
 
-    const href=titleLink.attr('href');
-    const productId=href?.match(/R-p-(\d+)/i)?.[1] ?? href?.match(/[?&]mc=(\d+)/i)?.[1];
-    const sourceUrl=href?absoluteUrl(href,'https://www.decathlon.hu'):source.url;
-
-    const rawImage=card.find('.product-card-image__img').first().attr('src');
-    const image=rawImage?absoluteUrl(rawImage,'https://www.decathlon.hu'):undefined;
-
-    const md=sticker.match(/(\d{1,2})[.](\d{1,2})-ig/i);
-    const validTo=md?dateFromMonthDay(Number(md[1]),Number(md[2])):isoToday();
-
-    const loyaltyOnly=/Hűségkártyás ajánlat/i.test(sticker+' '+cardText);
-    const unitMatch=cardText.match(/([\d\s.]+(?:,\d+)?)\s*Ft\s*\/\s*(db|kg|l)\b/i);
-    const unitPrice=unitMatch
-      ? Number(unitMatch[1].replace(/\s/g,'').replace(/\./g,'').replace(',','.'))
+    const md = sticker.match(/(\d{1,2})[.](\d{1,2})-ig/i);
+    const validTo = md ? dateFromMonthDay(Number(md[1]), Number(md[2])) : isoToday();
+    const loyaltyOnly = /Hűségkártyás ajánlat/i.test(sticker + ' ' + cardText);
+    const unitMatch = cardText.match(/([\d\s.]+(?:,\d+)?)\s*Ft\s*\/\s*(db|kg|l)\b/i);
+    const unitPrice = unitMatch
+      ? Number(unitMatch[1].replace(/\s/g, '').replace(/\./g, '').replace(',', '.'))
       : undefined;
 
     offers.push({
-      id:productId?\`decathlon-\${productId}\`:\`decathlon-\${slug(name)}\`,
+      id: productId ? 'decathlon-' + productId : 'decathlon-' + slug(name),
       name,
-      category:categoryFor(name),
-      store:'decathlon',
+      category: categoryFor(name),
+      store: 'decathlon',
       price,
-      oldPrice:oldPrice>price?oldPrice:undefined,
-      unitLabel:'1 db',
-      unitPrice:Number.isFinite(unitPrice)?Math.round((unitPrice as number)*100)/100:undefined,
-      unitPriceLabel:unitMatch?'/'+unitMatch[2].toLowerCase():undefined,
-      validFrom:isoToday(),
+      oldPrice: oldPriceRaw > price ? oldPriceRaw : undefined,
+      unitLabel: '1 db',
+      unitPrice: Number.isFinite(unitPrice) ? Math.round((unitPrice as number) * 100) / 100 : undefined,
+      unitPriceLabel: unitMatch ? '/' + unitMatch[2].toLowerCase() : undefined,
+      validFrom: isoToday(),
       validTo,
-      validityText:md?undefined:'Online leárazás · ma ellenőrizve',
+      validityText: md ? undefined : 'Online leárazás · ma ellenőrizve',
       loyaltyOnly,
-      conditionText:loyaltyOnly?'Hűségkártyás ajánlat':undefined,
-      priceScope:'Decathlon online ár',
-      image:image??placeholder('decathlon',name),
+      conditionText: loyaltyOnly ? 'Hűségkártyás ajánlat' : undefined,
+      priceScope: 'Decathlon online ár',
+      image: image ?? placeholder('decathlon', name),
       sourceUrl
     });
   });
 
-  return dedupe(offers).slice(0,80);
+  return dedupe(offers).slice(0, 80);
 }
-
-
-
 function sparMoneyNumber(value:string){
   const n=Number(value.replace(/\s/g,'').replace(/\./g,'').replace(',','.'));
   return Number.isFinite(n)?n:undefined;

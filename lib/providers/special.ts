@@ -319,6 +319,12 @@ async function scrapeDeichmann(source: RetailSource): Promise<Offer[]> {
   return dedupe(offers).slice(0, 100);
 }
 
+function urlWithParams(url:string, params:Record<string,string|number>){
+  const parsed=new URL(url);
+  for(const [key,value] of Object.entries(params)) parsed.searchParams.set(key,String(value));
+  return parsed.toString();
+}
+
 function absoluteUrl(href: string, base: string) {
   try { return new URL(href, base).toString(); } catch { return undefined; }
 }
@@ -706,10 +712,21 @@ function parsePraktikerPage(html:string,url:string):Offer[]{
 }
 
 async function scrapePraktiker(source:RetailSource):Promise<Offer[]>{
-  const urls=[source.url,'https://www.praktiker.hu/kiarusitas/bfd'];
-  const pages=await Promise.allSettled(urls.map(async url=>({url,html:await fetchHtml(url)})));
+  const firstUrl=urlWithParams(source.url,{page:1,perPage:100});
+  const firstHtml=await fetchHtml(firstUrl);
+  const countMatch=lines(firstHtml).find(x=>/^\d+\s+termék$/i.test(x))?.match(/^(\d+)/);
+  const totalCount=countMatch?Number(countMatch[1]):100;
+  const pageCount=Math.max(1,Math.min(6,Math.ceil(totalCount/100)));
+  const urls=[
+    ...Array.from({length:pageCount},(_,i)=>urlWithParams(source.url,{page:i+1,perPage:100})),
+    urlWithParams('https://www.praktiker.hu/kiarusitas/bfd',{page:1,perPage:100})
+  ];
+  const pages=await Promise.allSettled(urls.map(async url=>({
+    url,
+    html:url===firstUrl?firstHtml:await fetchHtml(url)
+  })));
   const offers=pages.flatMap(p=>p.status==='fulfilled'?parsePraktikerPage(p.value.html,p.value.url):[]);
-  return dedupe(offers).slice(0,220);
+  return dedupe(offers).slice(0,650);
 }
 
 function obiUnitPriceToPack(name:string,value:number,unit:string){
@@ -729,8 +746,7 @@ function obiUnitPriceToPack(name:string,value:number,unit:string){
   return Math.round(value);
 }
 
-async function scrapeObi(source:RetailSource):Promise<Offer[]>{
-  const html=await fetchHtml(source.url);
+function parseObiPage(html:string,url:string):Offer[]{
   const data=lines(html);
   const offers:Offer[]=[];
 
@@ -764,11 +780,25 @@ async function scrapeObi(source:RetailSource):Promise<Offer[]>{
       validTo:isoToday(),
       validityText:'Ma ellenőrizve',
       priceScope:'Online/áruházi ár eltérhet',
-      image:imageNear(html,name,source.url,placeholder('obi',name)),
-      sourceUrl:source.url
+      image:imageNear(html,name,url,placeholder('obi',name)),
+      sourceUrl:url
     });
   }
-  return dedupe(offers).slice(0,180);
+  return offers;
+}
+
+async function scrapeObi(source:RetailSource):Promise<Offer[]>{
+  const firstUrl=urlWithParams(source.url,{page:1});
+  const firstHtml=await fetchHtml(firstUrl);
+  const pageLine=lines(firstHtml).find(x=>/Oldal\s+1\s*\/\s*\d+/i.test(x));
+  const pageCount=Math.max(1,Math.min(10,Number(pageLine?.match(/\/\s*(\d+)/)?.[1]||1)));
+  const urls=Array.from({length:pageCount},(_,i)=>urlWithParams(source.url,{page:i+1}));
+  const pages=await Promise.allSettled(urls.map(async url=>({
+    url,
+    html:url===firstUrl?firstHtml:await fetchHtml(url)
+  })));
+  const offers=pages.flatMap(p=>p.status==='fulfilled'?parseObiPage(p.value.html,p.value.url):[]);
+  return dedupe(offers).slice(0,750);
 }
 
 function dateFromMonthDay(month: number, day: number) {

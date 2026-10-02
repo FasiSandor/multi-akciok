@@ -208,7 +208,7 @@ export default function Page() {
         ) : tab === 'search' ? (
           <SearchView offers={offers} query={query} setQuery={setQuery} onSelect={setSelected} />
         ) : tab === 'list' ? (
-          <ListView offers={offers} listIds={listIds} setListIds={setListIds} quantities={listQuantities} setQuantities={setListQuantities} />
+          <ListView offers={offers} listIds={listIds} setListIds={setListIds} quantities={listQuantities} setQuantities={setListQuantities} cards={cards} />
         ) : tab === 'cards' ? (
           <CardsView cards={cards} setCards={setCards} onAdd={() => setCardModal(true)} onOpen={setActiveCard} />
         ) : (
@@ -347,12 +347,13 @@ function OfferDetail({ offer, allOffers, onBack, onWatch, watched }: { offer: Of
   );
 }
 
-function ListView({ offers, listIds, setListIds, quantities, setQuantities }: {
+function ListView({ offers, listIds, setListIds, quantities, setQuantities, cards }: {
   offers: Offer[];
   listIds: string[];
   setListIds: (v: string[])=>void;
   quantities: Record<string,number>;
   setQuantities: Dispatch<SetStateAction<Record<string,number>>>;
+  cards: LoyaltyCard[];
 }) {
   const [oneStore,setOneStore]=useState(false);
   const [addOpen,setAddOpen]=useState(false);
@@ -376,13 +377,21 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities }: {
     const overlap=ta.filter(x=>tb.some(y=>y===x||y.includes(x)||x.includes(y))).length;
     return overlap/Math.max(ta.length,tb.length);
   }
+  const loyaltyStores=new Set(cards.map(card=>card.store));
+  function automaticPromoUsable(offer:Offer){
+    if(/digitális kupon/i.test(offer.conditionText||'')) return false;
+    if(offer.loyaltyOnly&&!loyaltyStores.has(offer.store)) return false;
+    return true;
+  }
   function unitPriceForQuantity(offer:Offer,qty:number){
+    if(!automaticPromoUsable(offer)&&offer.oldPrice) return offer.oldPrice;
     if(offer.minQuantity&&qty<offer.minQuantity&&offer.oldPrice) return offer.oldPrice;
     return offer.price;
   }
   function alternatives(item:Offer,qty:number,store?:StoreId){
     return offers
       .filter(o=>(!store||o.store===store) && (o.id===item.id || similarity(item,o)>=0.5))
+      .filter(o=>automaticPromoUsable(o)||!!o.oldPrice||o.id===item.id)
       .sort((a,b)=>unitPriceForQuantity(a,qty)-unitPriceForQuantity(b,qty));
   }
   function quantityFor(id:string){
@@ -448,7 +457,7 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities }: {
           {entries.map(({offer:o,qty})=>{const currentUnit=unitPriceForQuantity(o,qty);const best=alternatives(o,qty)[0]; const bestUnit=best?unitPriceForQuantity(best,qty):undefined; const cheaper=best&&bestUnit!==undefined&&bestUnit<currentUnit?best:null; return <div className="shopping-item selected-item" key={o.id}>
             <button className="remove-list-item" onClick={()=>removeItem(o.id)}><X size={14}/></button>
             <div className="mini-food"><Image src={o.image} alt="" fill sizes="44px"/></div>
-            <div><strong>{o.name}</strong><small>{o.unitLabel}{cheaper?' · máshol '+money(cheaper.price):''}</small><div className="qty-control"><button onClick={()=>changeQty(o.id,-1)} aria-label="Mennyiség csökkentése">−</button><span>{qty}</span><button onClick={()=>changeQty(o.id,1)} aria-label="Mennyiség növelése">+</button></div></div>
+            <div><strong>{o.name}</strong><small>{o.unitLabel}{cheaper?' · máshol '+money(unitPriceForQuantity(cheaper,qty)):''}</small>{o.loyaltyOnly&&!automaticPromoUsable(o)&&<em className="basket-condition">{/digitális kupon/i.test(o.conditionText||'')?'Kupon nincs automatikusan beleszámolva':'Kártya nélkül normál árral számolva'}</em>}<div className="qty-control"><button onClick={()=>changeQty(o.id,-1)} aria-label="Mennyiség csökkentése">−</button><span>{qty}</span><button onClick={()=>changeQty(o.id,1)} aria-label="Mennyiség növelése">+</button></div></div>
             <div className="item-price"><b>{money(currentUnit*qty)}</b><small>{o.minQuantity&&qty<o.minQuantity&&o.oldPrice?'Akció '+o.minQuantity+' db-tól':qty>1?qty+' × '+money(currentUnit):''}</small><StoreBadge store={o.store} compact/></div><span className="drag">≡</span>
           </div>})}
           <button className="add-product" onClick={()=>setAddOpen(v=>!v)}><Plus size={18}/> Termék hozzáadása</button>
@@ -460,6 +469,7 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities }: {
           <strong>{entries.length&&plan.length?money(planTotal):'—'}</strong>
           <p>{entries.length?entries.length+' féle termék · '+entries.reduce((sum,x)=>sum+x.qty,0)+' db':'Adj hozzá termékeket'}</p>
           {saving>0&&<div className="optimizer-saving">−{money(saving)}</div>}
+          <p className="optimizer-card-note"><CreditCard size={12}/> A kártyás árakhoz az adott kártyának a Kártyák között kell lennie. Digitális kupont nem feltételezünk automatikusan aktiváltnak.</p>
           <hr/>
           {oneStore&&!bestOneStore&&entries.length>0?<p className="optimizer-warning">A jelenlegi akciós adatok alapján nincs olyan üzlet, ahol minden kiválasztott tételhez azonos kiszerelésű, összevethető ajánlatot találtunk.</p>:<>
             <b>{oneStore?'Egy üzlet':'Boltonként'}</b>

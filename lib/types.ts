@@ -21,6 +21,7 @@ export type Offer = {
   image: string;
   loyaltyOnly?: boolean;
   conditionText?: string;
+  minQuantity?: number;
   sourceUrl?: string;
 };
 

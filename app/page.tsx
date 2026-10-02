@@ -376,10 +376,14 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities }: {
     const overlap=ta.filter(x=>tb.some(y=>y===x||y.includes(x)||x.includes(y))).length;
     return overlap/Math.max(ta.length,tb.length);
   }
-  function alternatives(item:Offer,store?:StoreId){
+  function unitPriceForQuantity(offer:Offer,qty:number){
+    if(offer.minQuantity&&qty<offer.minQuantity&&offer.oldPrice) return offer.oldPrice;
+    return offer.price;
+  }
+  function alternatives(item:Offer,qty:number,store?:StoreId){
     return offers
       .filter(o=>(!store||o.store===store) && (o.id===item.id || similarity(item,o)>=0.5))
-      .sort((a,b)=>a.price-b.price);
+      .sort((a,b)=>unitPriceForQuantity(a,qty)-unitPriceForQuantity(b,qty));
   }
   function quantityFor(id:string){
     return Math.max(1,Math.min(99,Math.round(quantities[id]||1)));
@@ -403,16 +407,16 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities }: {
     return {offer,qty:quantityFor(offer.id)};
   }).filter(Boolean) as Array<{offer:Offer;qty:number}>;
 
-  const originalTotal=entries.reduce((sum,x)=>sum+x.offer.price*x.qty,0);
-  const mixedPicks=entries.map(entry=>({source:entry.offer,offer:alternatives(entry.offer)[0]??entry.offer,qty:entry.qty}));
-  const mixedTotal=mixedPicks.reduce((sum,x)=>sum+x.offer.price*x.qty,0);
+  const originalTotal=entries.reduce((sum,x)=>sum+unitPriceForQuantity(x.offer,x.qty)*x.qty,0);
+  const mixedPicks=entries.map(entry=>({source:entry.offer,offer:alternatives(entry.offer,entry.qty)[0]??entry.offer,qty:entry.qty}));
+  const mixedTotal=mixedPicks.reduce((sum,x)=>sum+unitPriceForQuantity(x.offer,x.qty)*x.qty,0);
 
   const oneStoreOptions=storeOrder.map(store=>{
     const picks=entries.map(entry=>{
-      const offer=alternatives(entry.offer,store)[0];
+      const offer=alternatives(entry.offer,entry.qty,store)[0];
       return offer?{source:entry.offer,offer,qty:entry.qty}:null;
     }).filter(Boolean) as Array<{source:Offer;offer:Offer;qty:number}>;
-    return {store,picks,total:picks.reduce((sum,x)=>sum+x.offer.price*x.qty,0),complete:picks.length===entries.length};
+    return {store,picks,total:picks.reduce((sum,x)=>sum+unitPriceForQuantity(x.offer,x.qty)*x.qty,0),complete:picks.length===entries.length};
   }).filter(x=>x.complete).sort((a,b)=>a.total-b.total);
   const bestOneStore=oneStoreOptions[0];
 
@@ -421,7 +425,7 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities }: {
   const saving=Math.max(0,originalTotal-planTotal);
   const planTotals=storeOrder.map(store=>({
     store,
-    total:plan.filter(x=>x.offer.store===store).reduce((sum,x)=>sum+x.offer.price*x.qty,0),
+    total:plan.filter(x=>x.offer.store===store).reduce((sum,x)=>sum+unitPriceForQuantity(x.offer,x.qty)*x.qty,0),
     count:plan.filter(x=>x.offer.store===store).reduce((sum,x)=>sum+x.qty,0)
   })).filter(x=>x.count>0);
 
@@ -441,11 +445,11 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities }: {
       <div className="list-layout">
         <div className="shopping-items">
           {entries.length===0&&<div className="list-empty"><ShoppingCart size={28}/><b>A listád még üres</b><small>Adj hozzá aktuális ajánlatot a + gombbal.</small></div>}
-          {entries.map(({offer:o,qty})=>{const best=alternatives(o)[0]; const cheaper=best&&best.price<o.price?best:null; return <div className="shopping-item selected-item" key={o.id}>
+          {entries.map(({offer:o,qty})=>{const currentUnit=unitPriceForQuantity(o,qty);const best=alternatives(o,qty)[0]; const bestUnit=best?unitPriceForQuantity(best,qty):undefined; const cheaper=best&&bestUnit!==undefined&&bestUnit<currentUnit?best:null; return <div className="shopping-item selected-item" key={o.id}>
             <button className="remove-list-item" onClick={()=>removeItem(o.id)}><X size={14}/></button>
             <div className="mini-food"><Image src={o.image} alt="" fill sizes="44px"/></div>
             <div><strong>{o.name}</strong><small>{o.unitLabel}{cheaper?' · máshol '+money(cheaper.price):''}</small><div className="qty-control"><button onClick={()=>changeQty(o.id,-1)} aria-label="Mennyiség csökkentése">−</button><span>{qty}</span><button onClick={()=>changeQty(o.id,1)} aria-label="Mennyiség növelése">+</button></div></div>
-            <div className="item-price"><b>{money(o.price*qty)}</b><small>{qty>1?qty+' × '+money(o.price):''}</small><StoreBadge store={o.store} compact/></div><span className="drag">≡</span>
+            <div className="item-price"><b>{money(currentUnit*qty)}</b><small>{o.minQuantity&&qty<o.minQuantity&&o.oldPrice?'Akció '+o.minQuantity+' db-tól':qty>1?qty+' × '+money(currentUnit):''}</small><StoreBadge store={o.store} compact/></div><span className="drag">≡</span>
           </div>})}
           <button className="add-product" onClick={()=>setAddOpen(v=>!v)}><Plus size={18}/> Termék hozzáadása</button>
         </div>

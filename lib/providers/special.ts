@@ -564,7 +564,7 @@ function parseLidlPage(html: string, url: string) {
   const offers:Offer[]=[];
   const seen=new Set<string>();
 
-  $('[data-grid-data]').each((_,element)=>{
+  $('[data-grid-data]').each((_: number, element: any)=>{
     const raw=$(element).attr('data-grid-data');
     if(!raw) return;
     try{
@@ -1098,7 +1098,7 @@ async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
   const range=parseMonthDayRange(pageText);
   const offers:Offer[]=[];
 
-  $('.contentslider__slide').each((_,element)=>{
+  $('.contentslider__slide').each((_: number, element: any)=>{
     const card=$(element);
     const name=card.find('.contentslider__slide-title').first().text().replace(/\s+/g,' ').trim();
     if(name.length<3||name.length>170) return;
@@ -1154,6 +1154,11 @@ async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
 
   return dedupe(offers).slice(0,180);
 }
+
+const pharmacyMonths:Record<string,number>={
+  januar:1,februar:2,marcius:3,aprilis:4,majus:5,junius:6,julius:7,augusztus:8,
+  szeptember:9,oktober:10,november:11,december:12
+};
 
 function asciiHu(value:string){
   return value.toLocaleLowerCase('hu').normalize('NFD').replace(/[\u0300-\u036f]/g,'');

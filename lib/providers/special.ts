@@ -534,10 +534,10 @@ async function scrapeAldi(source: RetailSource): Promise<Offer[]> {
     if (range) { current = range; continue; }
     if (!/Cikkszám:/i.test(data[i])) continue;
 
-    const unitPrice = parseAldiUnitPrice(data[i]);
+    const before = data.slice(Math.max(0, i - 8), i);
+    const unitPrice = [data[i], ...before].map(parseAldiUnitPrice).find(Boolean);
     if (!unitPrice) continue;
 
-    const before = data.slice(Math.max(0, i - 4), i);
     const name = [...before].reverse().find(x =>
       x.length >= 3 && x.length <= 150 &&
       /(\/kg|\/darab|\/csomag|\/doboz|\/palack|\/üveg|\/tálca|\/vödör|\/pohár|\/szál|\/csokor|\b\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l)\b)/i.test(x) &&

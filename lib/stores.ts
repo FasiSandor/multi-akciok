@@ -18,7 +18,7 @@ export const stores: Record<StoreId, { name: string; short: string; color: strin
   mediamarkt: { name: 'MediaMarkt', short: 'MEDIA', color: '#df0000', text: '#ffffff', group: 'custom' },
   euronics: { name: 'Euronics', short: 'EURON', color: '#e30613', text: '#ffffff', group: 'custom' },
   gyongy: { name: 'Gyöngy Patikák', short: 'GYÖNGY', color: '#b12868', text: '#ffffff', group: 'custom' },
-  alma: { name: 'Alma Patikák', short: 'ALMA', color: '#7ba530', text: '#ffffff', group: 'custom' },
+  alma: { name: 'Alma · Újvárosi Patika', short: 'ALMA', color: '#7ba530', text: '#ffffff', group: 'custom' },
   'kamilla-mezotur': { name: 'Kamilla Patika · Mezőtúr', short: 'KAMILLA', color: '#2f8b6a', text: '#ffffff', group: 'custom' },
   custom: { name: 'Saját üzlet', short: 'SAJÁT', color: '#5b6472', text: '#ffffff', group: 'custom' }
 };

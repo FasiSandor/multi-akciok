@@ -632,7 +632,7 @@ function parseLidlPage(html: string, url: string) {
   return dedupe(offers).slice(0,180);
 }
 
-async async function scrapeLidl(source: RetailSource): Promise<Offer[]> {
+async function scrapeLidl(source: RetailSource): Promise<Offer[]> {
   const url='https://www.lidl.hu/c/lidl-plus-ajanlataink/a10050097';
   const html=await fetchHtml(url);
   return parseLidlPage(html,url);
@@ -1090,7 +1090,7 @@ function sparPackPrice(rate:number,rateUnit:string,qty:number,qtyUnit:string){
   return undefined;
 }
 
-async async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
+async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
   const proxy=await fetchSourceProxy('spar');
   const html=await proxy.text();
   const data=lines(html);

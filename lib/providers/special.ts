@@ -1093,59 +1093,44 @@ function sparPackPrice(rate:number,rateUnit:string,qty:number,qtyUnit:string){
 async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
   const proxy=await fetchSourceProxy('spar');
   const html=await proxy.text();
-  const data=lines(html);
-  const header=data.find(x=>/Aktuális ajánlataink/i.test(x));
-  const range=header?parseMonthDayRange(header):undefined;
+  const $=load(html);
+  const pageText=$('body').text().replace(/\s+/g,' ');
+  const range=parseMonthDayRange(pageText);
   const offers:Offer[]=[];
 
-  for(let i=0;i<data.length;i++){
-    const name=data[i].trim();
-    if(name.length<3||name.length>170) continue;
-    if(/Aktuális ajánlataink|Lapozd át|Sárga árcímkés|SPAR márkás|MySPAR|kupon|kedvezmény|Keresd őket|Ajánlatunk|Image/i.test(name)) continue;
-    if(/^\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|db)(?:\/doboz)?$/i.test(name)) continue;
+  $('.contentslider__slide').each((_,element)=>{
+    const card=$(element);
+    const name=card.find('.contentslider__slide-title').first().text().replace(/\s+/g,' ').trim();
+    if(name.length<3||name.length>170) return;
 
-    const after=data.slice(i+1,i+14);
-    const quantityText=[name,...after.slice(0,6)].join(' ');
-    const q=quantityText.match(/(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l)\b/i) ||
-      quantityText.match(/(\d+)\s*db(?:\/doboz)?\b/i);
-    if(!q) continue;
+    const detail=card.find('.contentslider__slide-text').text().replace(/\s+/g,' ').trim();
+    const quantity=detail.match(/(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l|db)\b/i);
+    if(!quantity) return;
+    const qty=Number(quantity[1].replace(',','.'));
+    const qtyUnit=quantity[2].toLowerCase();
+    if(!Number.isFinite(qty)||qty<=0) return;
 
-    const qty=Number(q[1].replace(',','.'));
-    const qtyUnit=(q[2]||'db').toLowerCase();
-    if(!Number.isFinite(qty)||qty<=0) continue;
-
-    const rateRows=after.map((line,index)=>{
-      const m=line.match(/\(([\d\s.]+(?:,\d+)?)\s*Ft\/1\s*(kg|l|db)\)/i);
-      if(!m) return null;
-      const rate=sparMoneyNumber(m[1]);
-      return rate?{index,rate,unit:m[2].toLowerCase(),line}:null;
-    }).filter((x):x is {index:number;rate:number;unit:string;line:string}=>!!x);
-    if(!rateRows.length) continue;
-
-    const conditionRow=after.map((line,index)=>{
-      const m=line.match(/(\d+)\s*db[-\s]*(tól|tol|esetén|eseten)/i);
-      return m?{index,minQuantity:Number(m[1]),kind:m[2].toLowerCase(),line}:null;
-    }).find((x):x is {index:number;minQuantity:number;kind:string;line:string}=>!!x);
-
-    let regularRate=rateRows[0];
-    let promoRate:typeof regularRate|undefined;
-    if(conditionRow){
-      const before=rateRows.filter(r=>r.index<conditionRow.index);
-      const afterCondition=rateRows.filter(r=>r.index>conditionRow.index);
-      if(before.length) regularRate=before[0];
-      if(afterCondition.length) promoRate=afterCondition[0];
+    const rates:Array<{rate:number;unit:string}>=[];
+    const rateRe=/\(([\d\s.]+(?:,\d+)?)\s*Ft\/1\s*(kg|l|db)\)/gi;
+    let rm:RegExpExecArray|null;
+    while((rm=rateRe.exec(detail))){
+      const rate=sparMoneyNumber(rm[1]);
+      if(rate) rates.push({rate,unit:rm[2].toLowerCase()});
     }
+    if(!rates.length) return;
 
-    const chosenRate=promoRate??regularRate;
-    const price=sparPackPrice(chosenRate.rate,chosenRate.unit,qty,qtyUnit);
-    if(!price||price<20||price>1_500_000) continue;
-    const regularPack=sparPackPrice(regularRate.rate,regularRate.unit,qty,qtyUnit);
-    const hasMulti=!!(conditionRow&&promoRate&&regularPack&&regularPack>price);
-    const conditionText=hasMulti
-      ? conditionRow.kind.startsWith('t')||conditionRow.kind==='tol'
-        ? conditionRow.minQuantity+' db-tól'
-        : conditionRow.minQuantity+' db esetén'
-      : undefined;
+    const condition=detail.match(/(\d+)\s*db[-\s]*(tól|tol|esetén|eseten)/i);
+    const regular=rates[0];
+    const promo=condition&&rates.length>1?rates[rates.length-1]:undefined;
+    const chosen=promo??regular;
+    const price=sparPackPrice(chosen.rate,chosen.unit,qty,qtyUnit);
+    if(!price||price<20||price>1_500_000) return;
+
+    const regularPack=sparPackPrice(regular.rate,regular.unit,qty,qtyUnit);
+    const minQuantity=condition?Number(condition[1]):undefined;
+    const hasMulti=!!(promo&&minQuantity&&regularPack&&regularPack>price);
+    const rawImage=card.find('img.contentslider-slide__image').first().attr('src');
+    const image=rawImage?absoluteUrl(rawImage,source.url):undefined;
 
     offers.push({
       id:'spar-'+slug(name),
@@ -1154,18 +1139,19 @@ async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
       store:'spar',
       price,
       oldPrice:hasMulti?regularPack:undefined,
-      unitLabel:q[1].replace('.',',')+' '+qtyUnit,
-      unitPrice:Math.round(chosenRate.rate),
-      unitPriceLabel:'/'+chosenRate.unit,
+      unitLabel:quantity[1].replace('.',',')+' '+qtyUnit,
+      unitPrice:Math.round(chosen.rate),
+      unitPriceLabel:'/'+chosen.unit,
       validFrom:range?.start??isoToday(),
       validTo:range?.end??isoToday(),
       validityText:range?undefined:'Ma ellenőrizve',
-      conditionText,
-      minQuantity:hasMulti?conditionRow.minQuantity:undefined,
-      image:imageNear(html,name,source.url,placeholder('spar',name)),
+      conditionText:hasMulti?(condition![2].toLowerCase().startsWith('t')?minQuantity+' db-tól':minQuantity+' db esetén'):undefined,
+      minQuantity:hasMulti?minQuantity:undefined,
+      image:image??placeholder('spar',name),
       sourceUrl:source.url
     });
-  }
+  });
+
   return dedupe(offers).slice(0,180);
 }
 

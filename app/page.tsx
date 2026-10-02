@@ -43,6 +43,17 @@ function readLocalArray<T>(key: string): T[] {
   }
 }
 
+function readLocalRecord<T>(key: string): Record<string,T> {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string,T> : {};
+  } catch {
+    return {};
+  }
+}
+
 function sameWatchTerm(a: string, b: string) {
   return a.trim().toLocaleLowerCase('hu') === b.trim().toLocaleLowerCase('hu');
 }
@@ -88,6 +99,7 @@ export default function Page() {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Offer | null>(null);
   const [listIds, setListIds] = useState<string[]>([]);
+  const [listQuantities, setListQuantities] = useState<Record<string,number>>({});
   const [cards, setCards] = useState<LoyaltyCard[]>([]);
   const [cardModal, setCardModal] = useState(false);
   const [activeCard, setActiveCard] = useState<LoyaltyCard | null>(null);
@@ -105,9 +117,11 @@ export default function Page() {
     const initialCards = readLocalArray<LoyaltyCard>('multi-akciok-cards');
     const initialList = readLocalArray<string>('multi-akciok-list');
     const initialRetailers = readLocalArray<CustomRetailer>('multi-akciok-custom-retailers');
+    const initialQuantities = readLocalRecord<number>('multi-akciok-list-qty');
     const initialWatchTerms = readLocalArray<string>('multi-akciok-watch-terms');
     setCards(initialCards);
     setListIds(initialList);
+    setListQuantities(initialQuantities);
     setCustomRetailers(initialRetailers);
     setWatchTerms(initialWatchTerms);
     setStorageReady(true);
@@ -123,6 +137,11 @@ export default function Page() {
     if (!storageReady) return;
     localStorage.setItem('multi-akciok-list', JSON.stringify(listIds));
   }, [listIds, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    localStorage.setItem('multi-akciok-list-qty', JSON.stringify(listQuantities));
+  }, [listQuantities, storageReady]);
 
   useEffect(() => {
     if (!storageReady) return;
@@ -145,6 +164,14 @@ export default function Page() {
           const liveOffers = data.offers as Offer[];
           setOffers(liveOffers);
           setListIds(prev => prev.map(id => liveOffers.find(o => o.id === id || id.startsWith(o.id + '-'))?.id ?? id));
+          setListQuantities(prev => {
+            const next: Record<string,number> = {};
+            for (const [id,qty] of Object.entries(prev)) {
+              const stableId = liveOffers.find(o => o.id === id || id.startsWith(o.id + '-'))?.id ?? id;
+              next[stableId] = Math.max(1, Number(qty) || 1);
+            }
+            return next;
+          });
           recordOfferHistory(liveOffers);
           setWatchHits(evaluateWatchTerms(liveOffers, termsOverride ?? watchTerms));
         }
@@ -181,7 +208,7 @@ export default function Page() {
         ) : tab === 'search' ? (
           <SearchView offers={offers} query={query} setQuery={setQuery} onSelect={setSelected} />
         ) : tab === 'list' ? (
-          <ListView offers={offers} listIds={listIds} setListIds={setListIds} />
+          <ListView offers={offers} listIds={listIds} setListIds={setListIds} quantities={listQuantities} setQuantities={setListQuantities} />
         ) : tab === 'cards' ? (
           <CardsView cards={cards} setCards={setCards} onAdd={() => setCardModal(true)} onOpen={setActiveCard} />
         ) : (
@@ -320,12 +347,16 @@ function OfferDetail({ offer, allOffers, onBack, onWatch, watched }: { offer: Of
   );
 }
 
-function ListView({ offers, listIds, setListIds }: { offers: Offer[]; listIds: string[]; setListIds: (v: string[])=>void }) {
+function ListView({ offers, listIds, setListIds, quantities, setQuantities }: {
+  offers: Offer[];
+  listIds: string[];
+  setListIds: (v: string[])=>void;
+  quantities: Record<string,number>;
+  setQuantities: Dispatch<SetStateAction<Record<string,number>>>;
+}) {
   const [oneStore,setOneStore]=useState(false);
   const [addOpen,setAddOpen]=useState(false);
   const [addQuery,setAddQuery]=useState('');
-
-  const selected = listIds.map(id=>offers.find(o=>o.id===id || id.startsWith(o.id+'-'))).filter(Boolean) as Offer[];
 
   function norm(value:string){
     return value.toLocaleLowerCase('hu').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
@@ -333,8 +364,13 @@ function ListView({ offers, listIds, setListIds }: { offers: Offer[]; listIds: s
   function tokens(value:string){
     return norm(value).split(' ').filter(x=>x.length>=4 && !['friss','akcios','termek','felnott','gyerek','ferfi'].includes(x));
   }
+  function samePack(a:Offer,b:Offer){
+    const aUnit=norm(a.unitLabel||'1 db');
+    const bUnit=norm(b.unitLabel||'1 db');
+    return aUnit===bUnit;
+  }
   function similarity(a:Offer,b:Offer){
-    if(a.category!==b.category) return 0;
+    if(a.category!==b.category || !samePack(a,b)) return 0;
     const ta=tokens(a.name),tb=tokens(b.name);
     if(!ta.length||!tb.length) return 0;
     const overlap=ta.filter(x=>tb.some(y=>y===x||y.includes(x)||x.includes(y))).length;
@@ -345,14 +381,38 @@ function ListView({ offers, listIds, setListIds }: { offers: Offer[]; listIds: s
       .filter(o=>(!store||o.store===store) && (o.id===item.id || similarity(item,o)>=0.5))
       .sort((a,b)=>a.price-b.price);
   }
+  function quantityFor(id:string){
+    return Math.max(1,Math.min(99,Math.round(quantities[id]||1)));
+  }
+  function changeQty(id:string,delta:number){
+    setQuantities(prev=>({...prev,[id]:Math.max(1,Math.min(99,Math.round((prev[id]||1)+delta)))}));
+  }
+  function removeItem(id:string){
+    setListIds(listIds.filter(x=>x!==id));
+    setQuantities(prev=>{const next={...prev};delete next[id];return next});
+  }
+  function addItem(id:string){
+    setListIds(listIds.includes(id)?listIds:[...listIds,id]);
+    setQuantities(prev=>({...prev,[id]:prev[id]||1}));
+    setAddQuery('');
+  }
 
-  const originalTotal=selected.reduce((a,b)=>a+b.price,0);
-  const mixedPicks=selected.map(item=>alternatives(item)[0]??item);
-  const mixedTotal=mixedPicks.reduce((a,b)=>a+b.price,0);
+  const entries=listIds.map(id=>{
+    const offer=offers.find(o=>o.id===id || id.startsWith(o.id+'-'));
+    if(!offer) return null;
+    return {offer,qty:quantityFor(offer.id)};
+  }).filter(Boolean) as Array<{offer:Offer;qty:number}>;
+
+  const originalTotal=entries.reduce((sum,x)=>sum+x.offer.price*x.qty,0);
+  const mixedPicks=entries.map(entry=>({source:entry.offer,offer:alternatives(entry.offer)[0]??entry.offer,qty:entry.qty}));
+  const mixedTotal=mixedPicks.reduce((sum,x)=>sum+x.offer.price*x.qty,0);
 
   const oneStoreOptions=storeOrder.map(store=>{
-    const picks=selected.map(item=>alternatives(item,store)[0]).filter(Boolean) as Offer[];
-    return {store,picks,total:picks.reduce((a,b)=>a+b.price,0),complete:picks.length===selected.length};
+    const picks=entries.map(entry=>{
+      const offer=alternatives(entry.offer,store)[0];
+      return offer?{source:entry.offer,offer,qty:entry.qty}:null;
+    }).filter(Boolean) as Array<{source:Offer;offer:Offer;qty:number}>;
+    return {store,picks,total:picks.reduce((sum,x)=>sum+x.offer.price*x.qty,0),complete:picks.length===entries.length};
   }).filter(x=>x.complete).sort((a,b)=>a.total-b.total);
   const bestOneStore=oneStoreOptions[0];
 
@@ -361,8 +421,8 @@ function ListView({ offers, listIds, setListIds }: { offers: Offer[]; listIds: s
   const saving=Math.max(0,originalTotal-planTotal);
   const planTotals=storeOrder.map(store=>({
     store,
-    total:plan.filter(o=>o.store===store).reduce((a,b)=>a+b.price,0),
-    count:plan.filter(o=>o.store===store).length
+    total:plan.filter(x=>x.offer.store===store).reduce((sum,x)=>sum+x.offer.price*x.qty,0),
+    count:plan.filter(x=>x.offer.store===store).reduce((sum,x)=>sum+x.qty,0)
   })).filter(x=>x.count>0);
 
   const q=norm(addQuery);
@@ -375,14 +435,17 @@ function ListView({ offers, listIds, setListIds }: { offers: Offer[]; listIds: s
 
       {addOpen&&<div className="list-add-panel">
         <div className="searchbox"><Search size={18}/><input autoFocus value={addQuery} onChange={e=>setAddQuery(e.target.value)} placeholder="Mit szeretnél venni?"/></div>
-        <div className="list-add-results">{addResults.map(o=><button key={o.id} onClick={()=>{setListIds([...listIds,o.id]);setAddQuery('')}}><div className="mini-food"><Image src={o.image} alt="" fill sizes="44px"/></div><div><b>{o.name}</b><small>{stores[o.store].name} · {o.unitLabel}</small></div><strong>{money(o.price)}</strong><Plus size={16}/></button>)}</div>
+        <div className="list-add-results">{addResults.map(o=><button key={o.id} onClick={()=>addItem(o.id)}><div className="mini-food"><Image src={o.image} alt="" fill sizes="44px"/></div><div><b>{o.name}</b><small>{stores[o.store].name} · {o.unitLabel}</small></div><strong>{money(o.price)}</strong><Plus size={16}/></button>)}</div>
       </div>}
 
       <div className="list-layout">
         <div className="shopping-items">
-          {selected.length===0&&<div className="list-empty"><ShoppingCart size={28}/><b>A listád még üres</b><small>Adj hozzá aktuális ajánlatot a + gombbal.</small></div>}
-          {selected.map(o=>{const best=alternatives(o)[0]; const cheaper=best&&best.price<o.price?best:null; return <div className="shopping-item selected-item" key={o.id}>
-            <button className="remove-list-item" onClick={()=>setListIds(listIds.filter(x=>x!==o.id))}><X size={14}/></button><div className="mini-food"><Image src={o.image} alt="" fill sizes="44px"/></div><div><strong>{o.name}</strong><small>{o.unitLabel}{cheaper?' · máshol '+money(cheaper.price):''}</small></div><div className="item-price"><b>{money(o.price)}</b><StoreBadge store={o.store} compact/></div><span className="drag">≡</span>
+          {entries.length===0&&<div className="list-empty"><ShoppingCart size={28}/><b>A listád még üres</b><small>Adj hozzá aktuális ajánlatot a + gombbal.</small></div>}
+          {entries.map(({offer:o,qty})=>{const best=alternatives(o)[0]; const cheaper=best&&best.price<o.price?best:null; return <div className="shopping-item selected-item" key={o.id}>
+            <button className="remove-list-item" onClick={()=>removeItem(o.id)}><X size={14}/></button>
+            <div className="mini-food"><Image src={o.image} alt="" fill sizes="44px"/></div>
+            <div><strong>{o.name}</strong><small>{o.unitLabel}{cheaper?' · máshol '+money(cheaper.price):''}</small><div className="qty-control"><button onClick={()=>changeQty(o.id,-1)} aria-label="Mennyiség csökkentése">−</button><span>{qty}</span><button onClick={()=>changeQty(o.id,1)} aria-label="Mennyiség növelése">+</button></div></div>
+            <div className="item-price"><b>{money(o.price*qty)}</b><small>{qty>1?qty+' × '+money(o.price):''}</small><StoreBadge store={o.store} compact/></div><span className="drag">≡</span>
           </div>})}
           <button className="add-product" onClick={()=>setAddOpen(v=>!v)}><Plus size={18}/> Termék hozzáadása</button>
         </div>
@@ -390,18 +453,18 @@ function ListView({ offers, listIds, setListIds }: { offers: Offer[]; listIds: s
         <div className="optimizer-card">
           <span className="trophy">{oneStore?'🏪':'✨'}</span>
           <small>{oneStore?'Legjobb egyboltos kosár':'Legolcsóbb kombináció'}</small>
-          <strong>{selected.length&&plan.length?money(planTotal):'—'}</strong>
-          <p>{selected.length?selected.length+' tétel · aktuális ajánlatok alapján':'Adj hozzá termékeket'}</p>
+          <strong>{entries.length&&plan.length?money(planTotal):'—'}</strong>
+          <p>{entries.length?entries.length+' féle termék · '+entries.reduce((sum,x)=>sum+x.qty,0)+' db':'Adj hozzá termékeket'}</p>
           {saving>0&&<div className="optimizer-saving">−{money(saving)}</div>}
           <hr/>
-          {oneStore&&!bestOneStore&&selected.length>0?<p className="optimizer-warning">A jelenlegi akciós adatok alapján nincs olyan üzlet, ahol minden kiválasztott tételhez találtunk megfelelő ajánlatot.</p>:<>
+          {oneStore&&!bestOneStore&&entries.length>0?<p className="optimizer-warning">A jelenlegi akciós adatok alapján nincs olyan üzlet, ahol minden kiválasztott tételhez azonos kiszerelésű, összevethető ajánlatot találtunk.</p>:<>
             <b>{oneStore?'Egy üzlet':'Boltonként'}</b>
             {planTotals.map(x=><div className="store-total" key={x.store}><StoreBadge store={x.store} compact/><span>{x.count} db · {money(x.total)}</span></div>)}
           </>}
         </div>
       </div>
 
-      <button className="primary wide" disabled={!selected.length||!plan.length}><Sparkles size={18}/> {oneStore?'Legjobb egy üzlet':'Lista optimalizálva'}</button>
+      <button className="primary wide" disabled={!entries.length||!plan.length}><Sparkles size={18}/> {oneStore?'Legjobb egy üzlet':'Lista optimalizálva'}</button>
     </div>
   );
 }

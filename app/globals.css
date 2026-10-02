@@ -32,3 +32,5 @@
 .offer-heart{margin-left:auto;display:inline-grid;place-items:center;color:#7d8798;border-radius:999px;padding:2px}.offer-heart.active{color:#ef3946}.offer-heart:focus-visible{outline:2px solid #0b438d;outline-offset:2px}.detail-nav a.icon-btn{text-decoration:none}
 
 .price-scope{display:block;font-style:normal;font-size:9px;color:#8a5b13;margin-top:3px}.detail-scope{width:max-content;max-width:100%;background:#fff7e7;border:1px solid #f4dfb3;border-radius:999px;padding:5px 8px;margin:7px 0 2px}
+
+.qty-control{display:inline-flex;align-items:center;gap:5px;margin-top:5px;background:#f1f4f8;border-radius:9px;padding:2px}.qty-control button{width:24px;height:24px;border:0;background:#fff;border-radius:7px;color:var(--navy);font-weight:900;display:grid;place-items:center}.qty-control span{min-width:18px;text-align:center;font-size:10px;font-weight:900}.item-price>small{display:block;font-size:8px;color:var(--muted);margin:2px 0 4px}

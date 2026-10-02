@@ -139,7 +139,7 @@ function productToOffer(product: Record<string, unknown>, source: RetailSource):
   const validTo = hasExactValidity ? String(validToRaw).slice(0, 10) : today();
 
   return {
-    id: `${source.id}-${slug(name)}-${price}`,
+    id: `${source.id}-${slug(name)}`,
     name,
     category: categoryFor(name),
     store: source.id,
@@ -223,7 +223,7 @@ function parseTextFallback(html: string, source: RetailSource, seen: Set<string>
 
     if (!name) continue;
 
-    const id = `${source.id}-${slug(name)}-${price}`;
+    const id = `${source.id}-${slug(name)}`;
     if (seen.has(id)) continue;
     seen.add(id);
 

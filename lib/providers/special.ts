@@ -172,7 +172,7 @@ async function scrapePenny(source: RetailSource): Promise<Offer[]> {
     const validTo = dates[1] ?? range.end;
 
     offers.push({
-      id: `penny-${slug(name)}-${price}`,
+      id: `penny-${slug(name)}`,
       name,
       category: categoryFor(name),
       store: 'penny',
@@ -211,7 +211,7 @@ async function scrapeDeichmann(source: RetailSource): Promise<Offer[]> {
     if (!name) continue;
 
     offers.push({
-      id: `deichmann-${slug(name)}-${price}`,
+      id: `deichmann-${slug(name)}`,
       name,
       category: 'Divat · Cipő',
       store: 'deichmann',
@@ -263,7 +263,7 @@ function parseAuchanPage(html: string, url: string) {
     const unitPrice = unitMatch ? number(unitMatch[1]) : undefined;
 
     offers.push({
-      id: `auchan-${slug(name)}-${price}`,
+      id: `auchan-${slug(name)}`,
       name,
       category: categoryFor(name),
       store: 'auchan',
@@ -356,7 +356,7 @@ async function scrapeAldi(source: RetailSource): Promise<Offer[]> {
     if(!price || price<30 || price>1_500_000) continue;
 
     offers.push({
-      id:`aldi-${slug(name)}-${price}`,
+      id:`aldi-${slug(name)}`,
       name,
       category:categoryFor(name),
       store:'aldi',
@@ -417,7 +417,7 @@ function parseLidlPage(html: string, url: string) {
     const unitPrice = unitPriceLine ? number(unitPriceLine.split('=')[1] ?? '') : undefined;
 
     offers.push({
-      id: `lidl-${slug(name)}-${price}`,
+      id: `lidl-${slug(name)}`,
       name,
       category: categoryFor(name),
       store: 'lidl',
@@ -483,7 +483,7 @@ async function scrapeTesco(source: RetailSource): Promise<Offer[]> {
     const loyaltyOnly = /Clubcard/i.test(before.join(' ') + ' ' + data[i]);
 
     offers.push({
-      id: `tesco-${slug(name)}-${price}`,
+      id: `tesco-${slug(name)}`,
       name,
       category: categoryFor(name),
       store: 'tesco',
@@ -534,7 +534,7 @@ async function scrapeRossmann(source:RetailSource):Promise<Offer[]>{
     const unitPrice=unitMatch?number(unitMatch[1]):undefined;
 
     offers.push({
-      id:'rossmann-'+slug(name)+'-'+price,
+      id:'rossmann-'+slug(name),
       name,
       category:categoryFor(name),
       store:'rossmann',
@@ -592,7 +592,7 @@ function parsePraktikerPage(html:string,url:string):Offer[]{
     const unitPriceLabel=unitEntry?'/'+(unitEntry.unit==='darab'?'db':unitEntry.unit):undefined;
 
     offers.push({
-      id:'praktiker-'+slug(name)+'-'+primary.value,
+      id:'praktiker-'+slug(name),
       name,
       category:categoryFor(name),
       store:'praktiker',
@@ -658,7 +658,7 @@ async function scrapeObi(source:RetailSource):Promise<Offer[]>{
     const unit=priceMatch[2];
     const price=obiUnitPriceToPack(name,unitPrice,unit);
     offers.push({
-      id:'obi-'+slug(name)+'-'+price,
+      id:'obi-'+slug(name),
       name,
       category:categoryFor(name),
       store:'obi',
@@ -714,7 +714,7 @@ async function scrapeIkea(source: RetailSource): Promise<Offer[]> {
     const start = validLine ? parseIsoDate(validLine) ?? isoToday() : isoToday();
 
     offers.push({
-      id: `ikea-${slug(name)}-${price}`,
+      id: `ikea-${slug(name)}`,
       name,
       category: categoryFor(name),
       store: 'ikea',
@@ -756,7 +756,7 @@ function parseJyskPage(html:string,url:string):Offer[]{
     const name=rawName.replace(/^(?:plus|basic|gold)\s+/i,'').trim();
 
     offers.push({
-      id:'jysk-'+slug(name)+'-'+price,
+      id:'jysk-'+slug(name),
       name,
       category:categoryFor(name),
       store:'jysk',
@@ -826,7 +826,7 @@ async function scrapeDecathlon(source: RetailSource): Promise<Offer[]> {
     const loyaltyOnly = /Hűségkártyás ajánlat/i.test(before.join(' '));
 
     offers.push({
-      id: `decathlon-${slug(name)}-${price}`,
+      id: `decathlon-${slug(name)}`,
       name,
       category: categoryFor(name),
       store: 'decathlon',
@@ -898,7 +898,7 @@ async function scrapeSpar(source:RetailSource):Promise<Offer[]>{
     if(!price||price<30||price>1_500_000) continue;
 
     offers.push({
-      id:'spar-'+slug(name)+'-'+price,
+      id:'spar-'+slug(name),
       name,
       category:categoryFor(name),
       store:'spar',
@@ -967,7 +967,7 @@ async function scrapeEuronics(source:RetailSource):Promise<Offer[]>{
     if(!price) continue;
 
     offers.push({
-      id:'euronics-'+slug(name)+'-'+price,
+      id:'euronics-'+slug(name),
       name,
       category:categoryFor(name),
       store:'euronics',

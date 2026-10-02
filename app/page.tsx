@@ -32,6 +32,21 @@ function money(value: number) {
   return new Intl.NumberFormat('hu-HU').format(value) + ' Ft';
 }
 
+function readLocalArray<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as T[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function sameWatchTerm(a: string, b: string) {
+  return a.trim().toLocaleLowerCase('hu') === b.trim().toLocaleLowerCase('hu');
+}
+
 function StoreBadge({ store, compact = false }: { store: StoreId; compact?: boolean }) {
   const s = stores[store];
   return (
@@ -84,36 +99,41 @@ export default function Page() {
   const [watchTerms, setWatchTerms] = useState<string[]>([]);
   const [watchHits, setWatchHits] = useState<WatchHit[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [storageReady, setStorageReady] = useState(false);
 
   useEffect(() => {
-    const savedCards = localStorage.getItem('multi-akciok-cards');
-    const savedList = localStorage.getItem('multi-akciok-list');
-    const savedRetailers = localStorage.getItem('multi-akciok-custom-retailers');
-    const savedWatchTerms = localStorage.getItem('multi-akciok-watch-terms');
-    setCards(savedCards ? JSON.parse(savedCards) : []);
-    if (savedList) setListIds(JSON.parse(savedList));
-    if (savedRetailers) setCustomRetailers(JSON.parse(savedRetailers));
-    const initialWatchTerms = savedWatchTerms ? JSON.parse(savedWatchTerms) : [];
+    const initialCards = readLocalArray<LoyaltyCard>('multi-akciok-cards');
+    const initialList = readLocalArray<string>('multi-akciok-list');
+    const initialRetailers = readLocalArray<CustomRetailer>('multi-akciok-custom-retailers');
+    const initialWatchTerms = readLocalArray<string>('multi-akciok-watch-terms');
+    setCards(initialCards);
+    setListIds(initialList);
+    setCustomRetailers(initialRetailers);
     setWatchTerms(initialWatchTerms);
+    setStorageReady(true);
     refreshOffers(initialWatchTerms);
   }, []);
 
   useEffect(() => {
-    if (cards.length) localStorage.setItem('multi-akciok-cards', JSON.stringify(cards));
-  }, [cards]);
+    if (!storageReady) return;
+    localStorage.setItem('multi-akciok-cards', JSON.stringify(cards));
+  }, [cards, storageReady]);
 
   useEffect(() => {
+    if (!storageReady) return;
     localStorage.setItem('multi-akciok-list', JSON.stringify(listIds));
-  }, [listIds]);
+  }, [listIds, storageReady]);
 
   useEffect(() => {
+    if (!storageReady) return;
     localStorage.setItem('multi-akciok-custom-retailers', JSON.stringify(customRetailers));
-  }, [customRetailers]);
+  }, [customRetailers, storageReady]);
 
   useEffect(() => {
+    if (!storageReady) return;
     localStorage.setItem('multi-akciok-watch-terms', JSON.stringify(watchTerms));
     setWatchHits(evaluateWatchTerms(offers, watchTerms));
-  }, [watchTerms, offers]);
+  }, [watchTerms, offers, storageReady]);
 
   async function refreshOffers(termsOverride?: string[]) {
     setRefreshing(true);
@@ -121,7 +141,13 @@ export default function Page() {
       const res = await fetch('/api/offers', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.offers)) { setOffers(data.offers); recordOfferHistory(data.offers); setWatchHits(evaluateWatchTerms(data.offers, termsOverride ?? watchTerms)); }
+        if (Array.isArray(data.offers)) {
+          const liveOffers = data.offers as Offer[];
+          setOffers(liveOffers);
+          setListIds(prev => prev.map(id => liveOffers.find(o => o.id === id || id.startsWith(o.id + '-'))?.id ?? id));
+          recordOfferHistory(liveOffers);
+          setWatchHits(evaluateWatchTerms(liveOffers, termsOverride ?? watchTerms));
+        }
         if (Array.isArray(data.sourceStates)) setSourceStates(data.sourceStates);
         if (Array.isArray(data.campaigns)) setCampaigns(data.campaigns);
         setLastRefresh(data.refreshedAt || new Date().toISOString());
@@ -139,15 +165,21 @@ export default function Page() {
     return offers.filter(o => `${o.name} ${o.category} ${stores[o.store].name}`.toLocaleLowerCase('hu').includes(q));
   }, [offers, query]);
 
+  function addWatchTerm(term: string) {
+    const value = term.trim();
+    if (!value) return;
+    setWatchTerms(prev => prev.some(x => sameWatchTerm(x, value)) ? prev : [...prev, value]);
+  }
+
   return (
     <main className="app-shell">
       <section className="phone-app">
         {selected ? (
-          <OfferDetail offer={selected} allOffers={offers} onBack={() => setSelected(null)} />
+          <OfferDetail offer={selected} allOffers={offers} watched={watchTerms.some(x=>sameWatchTerm(x,selected.name))} onWatch={()=>addWatchTerm(selected.name)} onBack={() => setSelected(null)} />
         ) : tab === 'home' ? (
-          <HomeView offers={filtered} campaigns={campaigns} query={query} setQuery={setQuery} onSelect={setSelected} setTab={setTab} refresh={() => refreshOffers()} refreshing={refreshing} lastRefresh={lastRefresh} customRetailers={customRetailers} watchHits={watchHits} onAddRetailer={() => setRetailerModal(true)} />
+          <HomeView offers={filtered} campaigns={campaigns} query={query} setQuery={setQuery} onSelect={setSelected} onWatch={addWatchTerm} watchedTerms={watchTerms} setTab={setTab} refresh={() => refreshOffers()} refreshing={refreshing} lastRefresh={lastRefresh} customRetailers={customRetailers} watchHits={watchHits} onAddRetailer={() => setRetailerModal(true)} />
         ) : tab === 'search' ? (
-          <SearchView offers={filtered} query={query} setQuery={setQuery} onSelect={setSelected} />
+          <SearchView offers={offers} query={query} setQuery={setQuery} onSelect={setSelected} />
         ) : tab === 'list' ? (
           <ListView offers={offers} listIds={listIds} setListIds={setListIds} />
         ) : tab === 'cards' ? (
@@ -177,11 +209,11 @@ function BrandHeader({ onBell }: { onBell?: () => void }) {
   );
 }
 
-function HomeView({ offers, campaigns, query, setQuery, onSelect, setTab, refresh, refreshing, lastRefresh, customRetailers, watchHits, onAddRetailer }: {
-  offers: Offer[]; campaigns: Campaign[]; query: string; setQuery: (s: string) => void; onSelect: (o: Offer) => void; setTab: (t: Tab) => void;
+function HomeView({ offers, campaigns, query, setQuery, onSelect, onWatch, watchedTerms, setTab, refresh, refreshing, lastRefresh, customRetailers, watchHits, onAddRetailer }: {
+  offers: Offer[]; campaigns: Campaign[]; query: string; setQuery: (s: string) => void; onSelect: (o: Offer) => void; onWatch: (name:string)=>void; watchedTerms:string[]; setTab: (t: Tab) => void;
   refresh: () => void; refreshing: boolean; lastRefresh: string; customRetailers: CustomRetailer[]; watchHits: WatchHit[]; onAddRetailer: () => void;
 }) {
-  const top = offers.slice(0, 3);
+  const top = [...offers].sort((a,b)=>discount(b)-discount(a) || a.price-b.price).slice(0, 3);
   const categories = [
     ['🥩', 'Élelmiszer'], ['🛋️', 'Lakberendezés'], ['🏃', 'Sport'], ['🛠️', 'Barkács'],
     ['👟', 'Cipő'], ['🌿', 'Kert'], ['🧴', 'Háztartás'], ['💄', 'Drogéria'], ['📺', 'Műszaki'], ['🏷️', 'Minden akció']
@@ -198,7 +230,7 @@ function HomeView({ offers, campaigns, query, setQuery, onSelect, setTab, refres
       </div>
       <div className="section-title"><h2>Mai legjobb akciók</h2><button onClick={() => setTab('search')}>Összes <ChevronRight size={16}/></button></div>
       <div className="offer-grid">
-        {top.map(o => <OfferCard key={o.id} offer={o} onClick={() => onSelect(o)} />)}
+        {top.map(o => <OfferCard key={o.id} offer={o} watched={watchedTerms.some(x=>sameWatchTerm(x,o.name))} onWatch={()=>onWatch(o.name)} onClick={() => onSelect(o)} />)}
       </div>
       <div className="fresh-banner">
         <div><span>FRISS</span><strong>Élelmiszer, otthon, sport és barkács akciók egy helyen</strong><button onClick={() => setTab('search')}>Megnézem <ChevronRight size={15}/></button></div>
@@ -223,7 +255,7 @@ function HomeView({ offers, campaigns, query, setQuery, onSelect, setTab, refres
   );
 }
 
-function OfferCard({ offer, onClick }: { offer: Offer; onClick: () => void }) {
+function OfferCard({ offer, onClick, onWatch, watched }: { offer: Offer; onClick: () => void; onWatch:()=>void; watched:boolean }) {
   const d = discount(offer);
   return (
     <button className="offer-card" onClick={onClick}>
@@ -232,19 +264,30 @@ function OfferCard({ offer, onClick }: { offer: Offer; onClick: () => void }) {
       <strong>{offer.name}</strong><small>{offer.unitLabel}</small>
       <b>{money(offer.price)}</b>{offer.oldPrice && <del>{money(offer.oldPrice)}</del>}
       <span className="unit-price">{offer.unitPrice ? `${money(offer.unitPrice)}${offer.unitPriceLabel||''}` : ' '}</span>
-      <div className="offer-foot"><StoreBadge store={offer.store} compact/><span>{offer.validityText||`${new Date(offer.validTo).toLocaleDateString('hu-HU',{month:'short',day:'numeric'})}-ig`}</span><Heart size={17}/></div>
+      <div className="offer-foot"><StoreBadge store={offer.store} compact/><span>{offer.validityText||`${new Date(offer.validTo).toLocaleDateString('hu-HU',{month:'short',day:'numeric'})}-ig`}</span><span className={'offer-heart '+(watched?'active':'')} role="button" tabIndex={0} aria-label={watched?'Figyelve':'Figyelés'} onClick={e=>{e.stopPropagation();onWatch()}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();onWatch()}}}><Heart size={17} fill={watched?'currentColor':'none'}/></span></div>
     </button>
   );
 }
 
 function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; query: string; setQuery: (s: string) => void; onSelect: (o: Offer) => void }) {
   const [storeFilter,setStoreFilter]=useState<StoreId | null>(null);
-  const visible=storeFilter?offers.filter(o=>o.store===storeFilter):offers;
+  const queryStore=storeOrder.find(s=>stores[s].name.toLocaleLowerCase('hu')===query.trim().toLocaleLowerCase('hu'))??null;
+  const effectiveStore=storeFilter??queryStore;
+  const textQuery=queryStore?'':query.trim().toLocaleLowerCase('hu');
+  const visible=offers.filter(o=>{
+    if(effectiveStore&&o.store!==effectiveStore) return false;
+    if(!textQuery) return true;
+    return (o.name+' '+o.category+' '+stores[o.store].name).toLocaleLowerCase('hu').includes(textQuery);
+  });
+  function chooseStore(store:StoreId|null){
+    setStoreFilter(store);
+    if(queryStore) setQuery('');
+  }
   return (
     <div className="screen search-screen">
       <h1>Akciókereső</h1>
-      <div className="searchbox large"><Search size={20}/><input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Mit keresel?"/><SlidersHorizontal size={19}/></div>
-      <div className="filter-chips"><button className={!storeFilter?'active':''} onClick={()=>setStoreFilter(null)}>Összes</button>{storeOrder.map(s=><button className={storeFilter===s?'active':''} onClick={()=>setStoreFilter(s)} key={s}>{stores[s].name}</button>)}</div>
+      <div className="searchbox large"><Search size={20}/><input autoFocus value={query} onChange={e => {setQuery(e.target.value);setStoreFilter(null)}} placeholder="Mit keresel?"/><SlidersHorizontal size={19}/></div>
+      <div className="filter-chips"><button className={!effectiveStore?'active':''} onClick={()=>chooseStore(null)}>Összes</button>{storeOrder.map(s=><button className={effectiveStore===s?'active':''} onClick={()=>chooseStore(s)} key={s}>{stores[s].name}</button>)}</div>
       <p className="result-count">{visible.length} aktuális ajánlat</p>
       <div className="results-list">
         {visible.map(o => <button className="result-card" key={o.id} onClick={()=>onSelect(o)}>
@@ -257,13 +300,13 @@ function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; qu
   );
 }
 
-function OfferDetail({ offer, allOffers, onBack }: { offer: Offer; allOffers: Offer[]; onBack: () => void }) {
+function OfferDetail({ offer, allOffers, onBack, onWatch, watched }: { offer: Offer; allOffers: Offer[]; onBack: () => void; onWatch:()=>void; watched:boolean }) {
   const [history, setHistory] = useState<HistoryStats | null>(null);
   useEffect(() => setHistory(readOfferHistoryStats(offer)), [offer]);
   const comparable = allOffers.filter(o => o.category === offer.category || o.name.toLowerCase().includes(offer.name.split(' ')[0].toLowerCase())).slice(0,5);
   return (
     <div className="screen detail-screen">
-      <div className="detail-nav"><button className="icon-btn" onClick={onBack}><ArrowLeft/></button><div><button className="icon-btn"><Heart/></button><button className="icon-btn"><ExternalLink/></button></div></div>
+      <div className="detail-nav"><button className="icon-btn" onClick={onBack}><ArrowLeft/></button><div><button className="icon-btn" onClick={onWatch} aria-label={watched?'Figyelve':'Figyelés'}><Heart fill={watched?'currentColor':'none'}/></button>{offer.sourceUrl&&<a className="icon-btn" href={offer.sourceUrl} target="_blank" rel="noreferrer" aria-label="Forrás megnyitása"><ExternalLink/></a>}</div></div>
       <div className="hero-product"><Image src={offer.image} alt={offer.name} fill sizes="80vw" /></div>
       <h1>{offer.name}</h1><p>{offer.unitLabel}</p>
       <div className="segmented"><button className="active">Árak és üzletek</button><button>Árhistorika</button></div>
@@ -282,7 +325,7 @@ function ListView({ offers, listIds, setListIds }: { offers: Offer[]; listIds: s
   const [addOpen,setAddOpen]=useState(false);
   const [addQuery,setAddQuery]=useState('');
 
-  const selected = listIds.map(id=>offers.find(o=>o.id===id)).filter(Boolean) as Offer[];
+  const selected = listIds.map(id=>offers.find(o=>o.id===id || id.startsWith(o.id+'-'))).filter(Boolean) as Offer[];
 
   function norm(value:string){
     return value.toLocaleLowerCase('hu').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();

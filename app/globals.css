@@ -28,3 +28,5 @@
 .wallet-card-open{border:0;background:transparent;display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;padding:0;min-width:0;width:100%}
 .wallet-delete{width:32px;height:32px;border:1px solid rgba(255,255,255,.28);background:rgba(0,0,0,.10);border-radius:10px;display:grid;place-items:center;opacity:.8}
 .wallet-delete:active{transform:scale(.96)}
+
+.offer-heart{margin-left:auto;display:inline-grid;place-items:center;color:#7d8798;border-radius:999px;padding:2px}.offer-heart.active{color:#ef3946}.offer-heart:focus-visible{outline:2px solid #0b438d;outline-offset:2px}.detail-nav a.icon-btn{text-decoration:none}

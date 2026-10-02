@@ -329,7 +329,22 @@ function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; qu
 
 function OfferDetail({ offer, allOffers, onBack, onWatch, watched }: { offer: Offer; allOffers: Offer[]; onBack: () => void; onWatch:()=>void; watched:boolean }) {
   const [history, setHistory] = useState<HistoryStats | null>(null);
-  useEffect(() => setHistory(readOfferHistoryStats(offer)), [offer]);
+  useEffect(() => {
+    let active = true;
+    const local = readOfferHistoryStats(offer);
+    setHistory(local);
+
+    fetch('/api/history?offerKey=' + encodeURIComponent(offer.id), { cache: 'no-store' })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!active || !data?.history) return;
+        const server = data.history as HistoryStats;
+        if (!local || server.samples >= local.samples) setHistory(server);
+      })
+      .catch(() => { /* local history remains available */ });
+
+    return () => { active = false; };
+  }, [offer]);
   const comparable = allOffers.filter(o => o.category === offer.category || o.name.toLowerCase().includes(offer.name.split(' ')[0].toLowerCase())).slice(0,5);
   return (
     <div className="screen detail-screen">

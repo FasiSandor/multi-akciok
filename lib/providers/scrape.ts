@@ -18,7 +18,7 @@ export const retailSources: RetailSource[] = [
   { id: 'rossmann', name: 'Rossmann', url: 'https://shop.rossmann.hu/altalanos-akciok' },
   { id: 'euronics', name: 'Euronics', url: 'https://euronics.hu/het-ajanlatai' },
   { id: 'gyongy', name: 'Gyöngy Patikák', url: 'https://gyongypatikak.hu/akcios-termekek' },
-  { id: 'alma', name: 'Alma Patikák', url: 'https://almapatika.hu/' },
+  { id: 'alma', name: 'Alma · Újvárosi Patika', url: 'https://almapatika.hu/patika/ujvarosi-gyogyszertar-mezotur' },
   { id: 'kamilla-mezotur', name: 'Kamilla Patika · Mezőtúr', url: 'https://gyongypatikak.hu/patika/kamilla-patika-mezotur' }
 ];
 

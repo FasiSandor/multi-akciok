@@ -1129,7 +1129,7 @@ function parsePharmacyOfferLine(line:string,store:'gyongy'|'alma'|'kamilla-mezot
     validFrom:range?.start??isoToday(),
     validTo:range?.end??isoToday(),
     validityText:range?undefined:'Ma ellenőrizve',
-    priceScope:store==='kamilla-mezotur'?'Kamilla Patika · Mezőtúr':store==='gyongy'?'Résztvevő Gyöngy Patikák · helyi ár eltérhet':'Résztvevő Alma Patikák · helyi ár eltérhet',
+    priceScope:store==='kamilla-mezotur'?'Kamilla Patika · Mezőtúr':store==='gyongy'?'Résztvevő Gyöngy Patikák · helyi ár eltérhet':'Újvárosi Gyógyszertár · Mezőtúr',
     conditionText:/\bVN\b/i.test(line)?'Vény nélkül kapható':undefined,
     image:imageNear(line,name,url,placeholder(store,name)),
     sourceUrl:url

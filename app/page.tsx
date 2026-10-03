@@ -16,6 +16,7 @@ import { evaluateWatchTerms, acknowledgeWatchHit, dismissWatchHit, clearWatchSta
 import { assessDeal } from '@/lib/deal-quality';
 import { equivalentCandidates } from '@/lib/optimizer';
 import { normalizeSearch, rankOffers } from '@/lib/search';
+import { parseShoppingText, matchShoppingItem, packsForShoppingItem, formatShoppingAmount, type ShoppingMatch } from '@/lib/list-input';
 import { getPushState, enablePush, disablePush, syncExistingPushTerms, type PushState } from '@/lib/push-client';
 
 type Tab = 'home' | 'search' | 'list' | 'cards' | 'profile';
@@ -484,6 +485,9 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
   const [oneStore,setOneStore]=useState(false);
   const [addOpen,setAddOpen]=useState(false);
   const [addQuery,setAddQuery]=useState('');
+  const [bulkInput,setBulkInput]=useState('');
+  const [unresolved,setUnresolved]=useState<ShoppingMatch[]>([]);
+  const [bulkMessage,setBulkMessage]=useState('');
 
   function norm(value:string){
     return value.toLocaleLowerCase('hu').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
@@ -510,10 +514,51 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
     setListIds(listIds.filter(x=>x!==id));
     setQuantities(prev=>{const next={...prev};delete next[id];return next});
   }
-  function addItem(id:string){
+  function addItem(id:string,packs=1,increment=false){
     setListIds(listIds.includes(id)?listIds:[...listIds,id]);
-    setQuantities(prev=>({...prev,[id]:prev[id]||1}));
+    setQuantities(prev=>({...prev,[id]:increment?Math.min(99,(prev[id]||0)+packs):Math.max(prev[id]||0,packs)}));
     setAddQuery('');
+  }
+
+  function processBulkInput(){
+    const parsed=parseShoppingText(bulkInput);
+    if(!parsed.length){
+      setBulkMessage('Írj legalább egy terméket.');
+      return;
+    }
+    const matches=parsed.map(item=>matchShoppingItem(item,offers));
+    const certain=matches.filter(match=>!!match.offer);
+    const unsure=matches.filter(match=>!match.offer);
+
+    const nextIds=new Set(listIds);
+    const additions:Record<string,number>={};
+    for(const match of certain){
+      if(!match.offer) continue;
+      nextIds.add(match.offer.id);
+      additions[match.offer.id]=(additions[match.offer.id]||0)+Math.max(1,match.packs);
+    }
+    setListIds([...nextIds]);
+    setQuantities(prev=>{
+      const next={...prev};
+      for(const [id,packs] of Object.entries(additions)) next[id]=Math.min(99,(next[id]||0)+packs);
+      return next;
+    });
+
+    setUnresolved(unsure);
+    setBulkMessage(
+      certain.length&&unsure.length
+        ? certain.length+' tétel bekerült, '+unsure.length+' tételhez választás kell.'
+        : certain.length
+          ? certain.length+' tétel bekerült a listába.'
+          : 'Nem találtam elég biztos automatikus egyezést.'
+    );
+    if(certain.length) setBulkInput('');
+  }
+
+  function chooseUnresolved(match:ShoppingMatch,offer:Offer){
+    const packs=packsForShoppingItem(match.item,offer);
+    addItem(offer.id,packs,true);
+    setUnresolved(prev=>prev.filter(x=>x.item.raw!==match.item.raw));
   }
 
   const entries=listIds.map(id=>{
@@ -567,14 +612,29 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
       <div className="title-with-plus"><div><ListChecks/><h1>Bevásárlólista</h1></div><button className="round-plus" onClick={()=>setAddOpen(v=>!v)}><Plus/></button></div>
       <button className="toggle-row button-toggle" onClick={()=>setOneStore(v=>!v)}><span className={'toggle '+(oneStore?'on':'')}><i/></span> Csak egy üzletbe megyek <span className="info-dot">i</span></button>
 
+      <div className="quick-list-card">
+        <div className="quick-list-head"><Sparkles size={18}/><div><b>Gyors lista</b><small>Írd vagy másold be egyszerre a bevásárlást.</small></div></div>
+        <textarea value={bulkInput} onChange={e=>setBulkInput(e.target.value)} placeholder={'pl. 2 tej, 1 kg krumpli, 3 vaj\n1 futócipő'} rows={3}/>
+        <button onClick={processBulkInput} disabled={!bulkInput.trim()}><Plus size={16}/> Lista felismerése</button>
+        {bulkMessage&&<div className="quick-list-message">{bulkMessage}</div>}
+      </div>
+
+      {unresolved.length>0&&<div className="unresolved-list">
+        <div className="section-title"><h2>Választás szükséges</h2><small>{unresolved.length} tétel</small></div>
+        {unresolved.map(match=><div className="unresolved-card" key={match.item.raw}>
+          <div className="unresolved-title"><div><b>{match.item.query}</b><small>{formatShoppingAmount(match.item)} · nem volt elég biztos találat</small></div><button onClick={()=>setUnresolved(prev=>prev.filter(x=>x!==match))}><X size={14}/></button></div>
+          {match.alternatives.length>0?<div className="unresolved-options">{match.alternatives.map(offer=><button key={offer.id} onClick={()=>chooseUnresolved(match,offer)}><div className="mini-food"><Image src={offer.image} alt="" fill sizes="42px"/></div><div><b>{offer.name}</b><small>{stores[offer.store].name} · {offer.unitLabel}</small></div><strong>{money(offer.price)}</strong></button>)}</div>:<p>Nincs aktuális ajánlat erre a kifejezésre.</p>}
+        </div>)}
+      </div>}
+
       {addOpen&&<div className="list-add-panel">
-        <div className="searchbox"><Search size={18}/><input autoFocus value={addQuery} onChange={e=>setAddQuery(e.target.value)} placeholder="Mit szeretnél venni?"/></div>
+        <div className="searchbox"><Search size={18}/><input autoFocus value={addQuery} onChange={e=>setAddQuery(e.target.value)} placeholder="Konkrét akció keresése..."/></div>
         <div className="list-add-results">{addResults.map(o=><button key={o.id} onClick={()=>addItem(o.id)}><div className="mini-food"><Image src={o.image} alt="" fill sizes="44px"/></div><div><b>{o.name}</b><small>{stores[o.store].name} · {o.unitLabel}</small></div><strong>{money(o.price)}</strong><Plus size={16}/></button>)}</div>
       </div>}
 
       <div className="list-layout">
         <div className="shopping-items">
-          {entries.length===0&&<div className="list-empty"><ShoppingCart size={28}/><b>A listád még üres</b><small>Adj hozzá aktuális ajánlatot a + gombbal.</small></div>}
+          {entries.length===0&&<div className="list-empty"><ShoppingCart size={28}/><b>A listád még üres</b><small>Használd a Gyors listát, vagy adj hozzá konkrét akciót.</small></div>}
           {entries.map(({offer:o,qty})=>{
             const current=unitPackPrice(o,qty)*qty;
             const best=rankedCandidates(o,qty)[0];
@@ -586,7 +646,7 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
               <div className="item-price"><b>{money(current)}</b><small>{o.minQuantity&&qty<o.minQuantity&&o.oldPrice?'Akció '+o.minQuantity+' db-tól':qty>1?qty+' × '+money(unitPackPrice(o,qty)):''}</small><StoreBadge store={o.store} compact/></div><span className="drag">≡</span>
             </div>;
           })}
-          <button className="add-product" onClick={()=>setAddOpen(v=>!v)}><Plus size={18}/> Termék hozzáadása</button>
+          <button className="add-product" onClick={()=>setAddOpen(v=>!v)}><Plus size={18}/> Konkrét akció hozzáadása</button>
         </div>
 
         <div className="optimizer-card">

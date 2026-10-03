@@ -3,11 +3,12 @@ const DEVICE_KEY='multi-akciok-push-device-v1';
 
 export type PushState='unsupported'|'off'|'denied'|'on';
 
-function base64ToUint8Array(value:string){
+function applicationServerKey(value:string):ArrayBuffer{
   const padding='='.repeat((4-value.length%4)%4);
   const base64=(value+padding).replace(/-/g,'+').replace(/_/g,'/');
   const raw=atob(base64);
-  return Uint8Array.from([...raw].map(ch=>ch.charCodeAt(0)));
+  const bytes=Uint8Array.from([...raw].map(ch=>ch.charCodeAt(0)));
+  return bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength) as ArrayBuffer;
 }
 
 function deviceId(){
@@ -57,7 +58,7 @@ export async function enablePush(watchTerms:string[]){
   if(!subscription){
     subscription=await registration.pushManager.subscribe({
       userVisibleOnly:true,
-      applicationServerKey:base64ToUint8Array(VAPID_PUBLIC_KEY)
+      applicationServerKey:applicationServerKey(VAPID_PUBLIC_KEY)
     });
   }
   await sendRegistration(subscription.endpoint,watchTerms);

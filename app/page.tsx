@@ -1074,6 +1074,6 @@ function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWat
 
 
 function BottomNav({tab,setTab}:{tab:Tab;setTab:(t:Tab)=>void}){
-  const items:[Tab,ReactNode,string][]=[['home',<Home key="h"/>,'Kezdőlap'],['search',<Search key="s"/>,'Keresés'],['list',<ListChecks key="l"/>,'Lista'],['cards',<CreditCard key="c"/>,'Kártyák'],['profile',<UserRound key="p"/>,'Profil']];
+  const items:[Tab,ReactNode,string][]=[['home',<Home key="h"/>,'Főoldal'],['search',<Search key="s"/>,'Keresés'],['list',<ListChecks key="l"/>,'Lista'],['cards',<CreditCard key="c"/>,'Kártyák'],['profile',<UserRound key="p"/>,'Profil']];
   return <nav className="bottom-nav">{items.map(([id,icon,label])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}>{icon}<span>{label}</span></button>)}</nav>
 }

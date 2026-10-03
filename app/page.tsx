@@ -482,7 +482,7 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
   setQuantities: Dispatch<SetStateAction<Record<string,number>>>;
   cards: LoyaltyCard[];
 }) {
-  const [oneStore,setOneStore]=useState(false);
+  const [storeLimit,setStoreLimit]=useState<1|2|3|'all'>('all');
   const [addOpen,setAddOpen]=useState(false);
   const [addQuery,setAddQuery]=useState('');
   const [bulkInput,setBulkInput]=useState('');
@@ -577,24 +577,72 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
       .sort((a,b)=>a.cost-b.cost||b.confidence-a.confidence);
   }
 
+  type PlanPick={source:Offer;offer:Offer;sourceQty:number;packs:number;cost:number;confidence:number};
+
   const originalTotal=entries.reduce((sum,x)=>sum+unitPackPrice(x.offer,x.qty)*x.qty,0);
   const mixedPicks=entries.map(entry=>{
     const candidate=rankedCandidates(entry.offer,entry.qty)[0];
     return candidate?{source:entry.offer,offer:candidate.offer,sourceQty:entry.qty,packs:candidate.requiredPacks,cost:candidate.cost,confidence:candidate.confidence}:null;
-  }).filter(Boolean) as Array<{source:Offer;offer:Offer;sourceQty:number;packs:number;cost:number;confidence:number}>;
+  }).filter(Boolean) as PlanPick[];
   const mixedTotal=mixedPicks.reduce((sum,x)=>sum+x.cost,0);
 
-  const oneStoreOptions=storeOrder.map(store=>{
-    const picks=entries.map(entry=>{
+  const bestByEntryStore=entries.map(entry=>{
+    const result=new Map<StoreId,PlanPick>();
+    for(const store of storeOrder){
       const candidate=rankedCandidates(entry.offer,entry.qty,store)[0];
-      return candidate?{source:entry.offer,offer:candidate.offer,sourceQty:entry.qty,packs:candidate.requiredPacks,cost:candidate.cost,confidence:candidate.confidence}:null;
-    }).filter(Boolean) as Array<{source:Offer;offer:Offer;sourceQty:number;packs:number;cost:number;confidence:number}>;
-    return {store,picks,total:picks.reduce((sum,x)=>sum+x.cost,0),complete:picks.length===entries.length};
-  }).filter(x=>x.complete).sort((a,b)=>a.total-b.total);
-  const bestOneStore=oneStoreOptions[0];
+      if(candidate){
+        result.set(store,{
+          source:entry.offer,
+          offer:candidate.offer,
+          sourceQty:entry.qty,
+          packs:candidate.requiredPacks,
+          cost:candidate.cost,
+          confidence:candidate.confidence
+        });
+      }
+    }
+    return result;
+  });
 
-  const plan=oneStore?(bestOneStore?.picks??[]):mixedPicks;
-  const planTotal=oneStore?(bestOneStore?.total??0):mixedTotal;
+  function storeCombinations(size:number){
+    const result:StoreId[][]=[];
+    function walk(start:number,current:StoreId[]){
+      if(current.length===size){result.push([...current]);return}
+      for(let i=start;i<storeOrder.length;i++){
+        current.push(storeOrder[i]);
+        walk(i+1,current);
+        current.pop();
+      }
+    }
+    walk(0,[]);
+    return result;
+  }
+
+  function planForStores(allowed:StoreId[]){
+    const allowedSet=new Set(allowed);
+    const picks:PlanPick[]=[];
+    for(let i=0;i<entries.length;i++){
+      const candidates=[...bestByEntryStore[i].entries()]
+        .filter(([store])=>allowedSet.has(store))
+        .map(([,pick])=>pick)
+        .sort((a,b)=>a.cost-b.cost||b.confidence-a.confidence);
+      if(!candidates[0]) return null;
+      picks.push(candidates[0]);
+    }
+    const used=[...new Set(picks.map(p=>p.offer.store))];
+    return {picks,total:picks.reduce((sum,p)=>sum+p.cost,0),used};
+  }
+
+  const constrainedBest=storeLimit==='all'
+    ? null
+    : storeCombinations(storeLimit)
+        .map(planForStores)
+        .filter((x):x is NonNullable<typeof x>=>!!x)
+        .sort((a,b)=>a.total-b.total||a.used.length-b.used.length)[0]??null;
+
+  const plan=storeLimit==='all'?mixedPicks:(constrainedBest?.picks??[]);
+  const planTotal=storeLimit==='all'?mixedTotal:(constrainedBest?.total??0);
+  const usedStoreCount=new Set(plan.map(x=>x.offer.store)).size;
   const saving=Math.max(0,originalTotal-planTotal);
   const substitutions=plan.filter(x=>x.source.id!==x.offer.id).length;
 
@@ -610,7 +658,7 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
   return (
     <div className="screen list-screen">
       <div className="title-with-plus"><div><ListChecks/><h1>Bevásárlólista</h1></div><button className="round-plus" onClick={()=>setAddOpen(v=>!v)}><Plus/></button></div>
-      <button className="toggle-row button-toggle" onClick={()=>setOneStore(v=>!v)}><span className={'toggle '+(oneStore?'on':'')}><i/></span> Csak egy üzletbe megyek <span className="info-dot">i</span></button>
+      <div className="store-limit-control"><span>Maximum üzletek</span><div>{([['1',1],['2',2],['3',3],['∞','all']] as const).map(([label,value])=><button key={label} className={storeLimit===value?'active':''} onClick={()=>setStoreLimit(value)}>{label}</button>)}</div></div>
 
       <div className="quick-list-card">
         <div className="quick-list-head"><Sparkles size={18}/><div><b>Gyors lista</b><small>Írd vagy másold be egyszerre a bevásárlást.</small></div></div>
@@ -650,22 +698,22 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
         </div>
 
         <div className="optimizer-card">
-          <span className="trophy">{oneStore?'🏪':'✨'}</span>
-          <small>{oneStore?'Legjobb egyboltos kosár':'Legolcsóbb megbízható kombináció'}</small>
+          <span className="trophy">{storeLimit===1?'🏪':'✨'}</span>
+          <small>{storeLimit==='all'?'Legolcsóbb megbízható kombináció':'Legjobb kosár max. '+storeLimit+' üzletből'}</small>
           <strong>{entries.length&&plan.length?money(planTotal):'—'}</strong>
-          <p>{entries.length?entries.length+' féle termék · '+entries.reduce((sum,x)=>sum+x.qty,0)+' kiválasztott csomag':'Adj hozzá termékeket'}</p>
+          <p>{entries.length?entries.length+' féle termék · '+entries.reduce((sum,x)=>sum+x.qty,0)+' kiválasztott csomag'+(plan.length?' · '+usedStoreCount+' üzlet':''):'Adj hozzá termékeket'}</p>
           {saving>0&&<div className="optimizer-saving">−{money(saving)}</div>}
           {substitutions>0&&<div className="optimizer-substitution">{substitutions} tételnél összevethető másik kiszerelést/terméket választ</div>}
           <p className="optimizer-card-note"><CreditCard size={12}/> Csak erős név-, kategória- és kiszerelés-egyezésnél helyettesítünk. Különböző kiszerelésnél a szükséges csomagszámot is átszámoljuk.</p>
           <hr/>
-          {oneStore&&!bestOneStore&&entries.length>0?<p className="optimizer-warning">A jelenlegi adatok alapján nincs olyan egyetlen üzlet, ahol minden tételhez elég biztosan összevethető ajánlatot találtunk.</p>:<>
-            <b>{oneStore?'Egy üzlet':'Boltonként'}</b>
+          {storeLimit!=='all'&&!constrainedBest&&entries.length>0?<p className="optimizer-warning">A jelenlegi akciók alapján nem állítható össze minden tétel elég biztos egyezéssel legfeljebb {storeLimit} üzletből.</p>:<>
+            <b>{storeLimit==='all'?'Boltonként':'Javasolt boltok'}</b>
             {planTotals.map(x=><div className="store-total" key={x.store}><StoreBadge store={x.store} compact/><span>{x.count} csomag · {money(x.total)}</span></div>)}
           </>}
         </div>
       </div>
 
-      <button className="primary wide" disabled={!entries.length||!plan.length}><Sparkles size={18}/> {oneStore?'Legjobb egy üzlet':'Lista optimalizálva'}</button>
+      <button className="primary wide" disabled={!entries.length||!plan.length}><Sparkles size={18}/> {storeLimit===1?'Legjobb egy üzlet':'Lista optimalizálva'}</button>
     </div>
   );
 }

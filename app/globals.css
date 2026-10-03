@@ -70,3 +70,6 @@
 .favorite-main span{font-size:11px;color:#6b7280}
 .favorite-add{margin-top:9px;width:100%;display:flex;align-items:center;justify-content:center;gap:5px;border:0;border-radius:11px;background:#eff6ff;color:#0b2545;font-weight:800;padding:8px}
 .watch-center-actions .watch-list-add{color:#0b2545;background:#eef5ff}
+
+.search-scope-note{margin:-8px 0 12px;color:var(--muted);font-size:12px}
+.catalog-search-link{margin-top:12px;display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:#fff;color:var(--navy);text-decoration:none;border-radius:12px;padding:9px 12px;font-weight:800;font-size:12px}

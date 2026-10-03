@@ -415,7 +415,8 @@ function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; qu
   return (
     <div className="screen search-screen">
       <h1>Akciókereső</h1>
-      <div className="searchbox large"><Search size={20}/><input autoFocus value={query} onChange={e => {setQuery(e.target.value);setStoreFilter(null)}} placeholder="Mit keresel? Elgépelést is értek."/><SlidersHorizontal size={19}/></div>
+      <p className="search-scope-note">Az aktuálisan betöltött akciók között keresek.</p>
+      <div className="searchbox large"><Search size={20}/><input autoFocus value={query} onChange={e => {setQuery(e.target.value);setStoreFilter(null)}} placeholder="Mit keresel? Pl. tej, vaj, Nutella…"/><SlidersHorizontal size={19}/></div>
       <div className="filter-chips"><button className={!effectiveStore?'active':''} onClick={()=>chooseStore(null)}>Összes</button>{storeOrder.map(s=><button className={effectiveStore===s?'active':''} onClick={()=>chooseStore(s)} key={s}>{stores[s].name}</button>)}</div>
       <p className="result-count">{visible.length} aktuális ajánlat{query.trim()?' · intelligens keresés':''}</p>
       <div className="results-list">
@@ -425,7 +426,7 @@ function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; qu
           <div className="result-price"><b>{money(o.price)}</b>{o.oldPrice&&<del>{money(o.oldPrice)}</del>}<small>{o.unitPrice?money(o.unitPrice)+(o.unitPriceLabel||''):''}</small></div>
         </button>)}
       </div>
-      {!visible.length&&<div className="empty"><Search size={38}/><h3>Nincs biztos találat</h3><p className="muted">Próbálj rövidebb terméknevet, márkát vagy üzletnevet.</p></div>}
+      {!visible.length&&<div className="empty"><Search size={38}/><h3>Nincs aktuális akció erre</h3><p className="muted">Ez nem azt jelenti, hogy a boltok nem árulják — csak a most betöltött akciók között nincs találat.</p>{query.trim()&&<a className="catalog-search-link" href={"https://www.google.com/search?q="+encodeURIComponent(query+" site:lidl.hu OR site:aldi.hu OR site:tesco.hu OR site:spar.hu")} target="_blank" rel="noreferrer"><ExternalLink size={16}/> Keresés a boltok teljes kínálatában</a>}</div>}
     </div>
   );
 }

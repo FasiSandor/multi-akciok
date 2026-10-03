@@ -15,6 +15,7 @@ import { recordOfferHistory, readOfferHistoryStats, type HistoryStats, type Pric
 import { evaluateWatchTerms, type WatchHit } from '@/lib/client-watch';
 import { assessDeal } from '@/lib/deal-quality';
 import { equivalentCandidates } from '@/lib/optimizer';
+import { rankOffers } from '@/lib/search';
 
 type Tab = 'home' | 'search' | 'list' | 'cards' | 'profile';
 type SourceState = { id:string; name:string; url:string; ok:boolean; checkedAt:string; count:number; note?:string };
@@ -188,11 +189,7 @@ export default function Page() {
     }
   }
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLocaleLowerCase('hu');
-    if (!q) return offers;
-    return offers.filter(o => `${o.name} ${o.category} ${stores[o.store].name}`.toLocaleLowerCase('hu').includes(q));
-  }, [offers, query]);
+  const filtered = useMemo(() => rankOffers(offers, query), [offers, query]);
 
   function addWatchTerm(term: string) {
     const value = term.trim();
@@ -300,34 +297,35 @@ function OfferCard({ offer, onClick, onWatch, watched }: { offer: Offer; onClick
 
 function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; query: string; setQuery: (s: string) => void; onSelect: (o: Offer) => void }) {
   const [storeFilter,setStoreFilter]=useState<StoreId | null>(null);
-  const queryStore=storeOrder.find(s=>stores[s].name.toLocaleLowerCase('hu')===query.trim().toLocaleLowerCase('hu'))??null;
+  const queryStore=storeOrder.find(s=>rankOffers([{...offers.find(o=>o.store===s)??offers[0],store:s} as Offer],query).length>0 && stores[s].name.toLocaleLowerCase('hu')===query.trim().toLocaleLowerCase('hu'))??null;
   const effectiveStore=storeFilter??queryStore;
-  const textQuery=queryStore?'':query.trim().toLocaleLowerCase('hu');
-  const visible=offers.filter(o=>{
-    if(effectiveStore&&o.store!==effectiveStore) return false;
-    if(!textQuery) return true;
-    return (o.name+' '+o.category+' '+stores[o.store].name).toLocaleLowerCase('hu').includes(textQuery);
-  });
+  const textQuery=queryStore?'':query;
+  const base=effectiveStore?offers.filter(o=>o.store===effectiveStore):offers;
+  const visible=rankOffers(base,textQuery);
+
   function chooseStore(store:StoreId|null){
     setStoreFilter(store);
     if(queryStore) setQuery('');
   }
+
   return (
     <div className="screen search-screen">
       <h1>Akciókereső</h1>
-      <div className="searchbox large"><Search size={20}/><input autoFocus value={query} onChange={e => {setQuery(e.target.value);setStoreFilter(null)}} placeholder="Mit keresel?"/><SlidersHorizontal size={19}/></div>
+      <div className="searchbox large"><Search size={20}/><input autoFocus value={query} onChange={e => {setQuery(e.target.value);setStoreFilter(null)}} placeholder="Mit keresel? Elgépelést is értek."/><SlidersHorizontal size={19}/></div>
       <div className="filter-chips"><button className={!effectiveStore?'active':''} onClick={()=>chooseStore(null)}>Összes</button>{storeOrder.map(s=><button className={effectiveStore===s?'active':''} onClick={()=>chooseStore(s)} key={s}>{stores[s].name}</button>)}</div>
-      <p className="result-count">{visible.length} aktuális ajánlat</p>
+      <p className="result-count">{visible.length} aktuális ajánlat{query.trim()?' · intelligens keresés':''}</p>
       <div className="results-list">
-        {visible.map(o => <button className="result-card" key={o.id} onClick={()=>onSelect(o)}>
-          <div className="result-image"><Image src={o.image} alt={o.name} fill sizes="88px"/></div>
-          <div className="result-main"><div className="result-top"><StoreBadge store={o.store} compact/>{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><strong>{o.name}</strong><small>{o.unitLabel} · {o.category}{o.unitPrice?` · ${money(o.unitPrice)}${o.unitPriceLabel||''}`:''}</small>{o.conditionText&&<em className="condition-note">{o.conditionText}</em>}{o.priceScope&&<em className="price-scope">{o.priceScope}</em>}</div>
-          <div className="result-price"><b>{money(o.price)}</b>{o.oldPrice&&<del>{money(o.oldPrice)}</del>}<ChevronRight size={18}/></div>
+        {visible.map(o=><button className="result-card" key={o.id} onClick={()=>onSelect(o)}>
+          <div className="result-image"><Image src={o.image} alt="" fill sizes="72px"/></div>
+          <div className="result-main"><div className="result-top"><StoreBadge store={o.store} compact/>{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><strong>{o.name}</strong><small>{o.unitLabel}</small>{o.conditionText&&<em className="condition-note">{o.conditionText}</em>}{o.priceScope&&<em className="price-scope">{o.priceScope}</em>}</div>
+          <div className="result-price"><b>{money(o.price)}</b>{o.oldPrice&&<del>{money(o.oldPrice)}</del>}<small>{o.unitPrice?money(o.unitPrice)+(o.unitPriceLabel||''):''}</small></div>
         </button>)}
       </div>
+      {!visible.length&&<div className="empty"><Search size={38}/><h3>Nincs biztos találat</h3><p className="muted">Próbálj rövidebb terméknevet, márkát vagy üzletnevet.</p></div>}
     </div>
   );
 }
+
 
 function HistoryChart({points}:{points:PricePoint[]}) {
   if(points.length<2) return <div className="history-chart-empty">Még nincs elég pont a grafikonhoz.</div>;

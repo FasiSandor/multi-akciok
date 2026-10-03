@@ -12,7 +12,7 @@ import { fallbackOffers } from '@/lib/fallback-offers';
 import { knownStoreOrder, offerStoreOrder, stores } from '@/lib/stores';
 import { CodeDisplay } from '@/components/CodeDisplay';
 import { recordOfferHistory, readOfferHistoryStats, type HistoryStats, type PricePoint } from '@/lib/client-history';
-import { evaluateWatchTerms, type WatchHit } from '@/lib/client-watch';
+import { evaluateWatchTerms, acknowledgeWatchHit, dismissWatchHit, clearWatchState, type WatchHit } from '@/lib/client-watch';
 import { assessDeal } from '@/lib/deal-quality';
 import { equivalentCandidates } from '@/lib/optimizer';
 import { normalizeSearch, rankOffers } from '@/lib/search';
@@ -197,13 +197,33 @@ export default function Page() {
     setWatchTerms(prev => prev.some(x => sameWatchTerm(x, value)) ? prev : [...prev, value]);
   }
 
+  function refreshWatchHits() {
+    setWatchHits(evaluateWatchTerms(offers, watchTerms));
+  }
+
+  function openWatchHit(hit: WatchHit) {
+    acknowledgeWatchHit(hit.term, hit.offer);
+    refreshWatchHits();
+    setSelected(hit.offer);
+  }
+
+  function dismissHit(hit: WatchHit) {
+    dismissWatchHit(hit.term, hit.offer);
+    refreshWatchHits();
+  }
+
+  function removeWatchTerm(term:string) {
+    clearWatchState(term);
+    setWatchTerms(prev=>prev.filter(x=>!sameWatchTerm(x,term)));
+  }
+
   return (
     <main className="app-shell">
       <section className="phone-app">
         {selected ? (
           <OfferDetail offer={selected} allOffers={offers} watched={watchTerms.some(x=>sameWatchTerm(x,selected.name))} onWatch={()=>addWatchTerm(selected.name)} onBack={() => setSelected(null)} />
         ) : tab === 'home' ? (
-          <HomeView offers={filtered} campaigns={campaigns} query={query} setQuery={setQuery} onSelect={setSelected} onWatch={addWatchTerm} watchedTerms={watchTerms} setTab={setTab} refresh={() => refreshOffers()} refreshing={refreshing} lastRefresh={lastRefresh} customRetailers={customRetailers} watchHits={watchHits} onAddRetailer={() => setRetailerModal(true)} />
+          <HomeView offers={filtered} campaigns={campaigns} query={query} setQuery={setQuery} onSelect={setSelected} onWatch={addWatchTerm} watchedTerms={watchTerms} setTab={setTab} refresh={() => refreshOffers()} refreshing={refreshing} lastRefresh={lastRefresh} customRetailers={customRetailers} watchHits={watchHits} onOpenWatch={openWatchHit} onDismissWatch={dismissHit} onAddRetailer={() => setRetailerModal(true)} />
         ) : tab === 'search' ? (
           <SearchView offers={offers} query={query} setQuery={setQuery} onSelect={setSelected} />
         ) : tab === 'list' ? (
@@ -211,7 +231,7 @@ export default function Page() {
         ) : tab === 'cards' ? (
           <CardsView cards={cards} setCards={setCards} onAdd={() => setCardModal(true)} onOpen={setActiveCard} />
         ) : (
-          <ProfileView customRetailers={customRetailers} sourceStates={sourceStates} lastRefresh={lastRefresh} watchTerms={watchTerms} setWatchTerms={setWatchTerms} watchHits={watchHits} onAddRetailer={() => setRetailerModal(true)} onRemoveRetailer={(id) => setCustomRetailers(prev => prev.filter(x => x.id !== id))} />
+          <ProfileView customRetailers={customRetailers} sourceStates={sourceStates} lastRefresh={lastRefresh} watchTerms={watchTerms} setWatchTerms={setWatchTerms} watchHits={watchHits} onOpenWatch={openWatchHit} onDismissWatch={dismissHit} onRemoveWatch={removeWatchTerm} onAddRetailer={() => setRetailerModal(true)} onRemoveRetailer={(id) => setCustomRetailers(prev => prev.filter(x => x.id !== id))} />
         )}
         {!selected && <BottomNav tab={tab} setTab={setTab} />}
       </section>
@@ -235,9 +255,9 @@ function BrandHeader({ onBell }: { onBell?: () => void }) {
   );
 }
 
-function HomeView({ offers, campaigns, query, setQuery, onSelect, onWatch, watchedTerms, setTab, refresh, refreshing, lastRefresh, customRetailers, watchHits, onAddRetailer }: {
+function HomeView({ offers, campaigns, query, setQuery, onSelect, onWatch, watchedTerms, setTab, refresh, refreshing, lastRefresh, customRetailers, watchHits, onOpenWatch, onDismissWatch, onAddRetailer }: {
   offers: Offer[]; campaigns: Campaign[]; query: string; setQuery: (s: string) => void; onSelect: (o: Offer) => void; onWatch: (name:string)=>void; watchedTerms:string[]; setTab: (t: Tab) => void;
-  refresh: () => void; refreshing: boolean; lastRefresh: string; customRetailers: CustomRetailer[]; watchHits: WatchHit[]; onAddRetailer: () => void;
+  refresh: () => void; refreshing: boolean; lastRefresh: string; customRetailers: CustomRetailer[]; watchHits: WatchHit[]; onOpenWatch:(hit:WatchHit)=>void; onDismissWatch:(hit:WatchHit)=>void; onAddRetailer: () => void;
 }) {
   const top = [...offers].sort((a,b)=>discount(b)-discount(a) || a.price-b.price).slice(0, 3);
   const categories = [
@@ -248,7 +268,7 @@ function HomeView({ offers, campaigns, query, setQuery, onSelect, onWatch, watch
     <div className="screen home-screen">
       <BrandHeader onBell={()=>setTab('profile')} />
       <div className="searchbox"><Search size={19} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Keress terméket, márkát vagy üzletet..." /></div>
-      {watchHits.length>0&&<div className="watch-banner"><div className="watch-banner-head"><Bell size={16}/><strong>Figyelt ajánlatok</strong><span>{watchHits.length}</span></div>{watchHits.slice(0,2).map(hit=><button key={hit.term} onClick={()=>onSelect(hit.offer)}><div><b>{hit.term}</b><small>{hit.status==='lower'?'Olcsóbb lett':hit.status==='new'?'Új találat':'Aktuális találat'} · {stores[hit.offer.store].name}</small></div><strong>{money(hit.offer.price)}</strong><ChevronRight size={16}/></button>)}</div>}
+      {watchHits.some(hit=>hit.attention)&&<div className="watch-banner"><div className="watch-banner-head"><Bell size={16}/><strong>Új figyelt ajánlat</strong><span>{watchHits.filter(hit=>hit.attention).length}</span></div>{watchHits.filter(hit=>hit.attention).slice(0,2).map(hit=><div className="watch-banner-row" key={hit.term}><button onClick={()=>onOpenWatch(hit)}><div><b>{hit.term}</b><small>{hit.status==='lower'?'Olcsóbb lett':hit.status==='new'?'Új találat':'Aktuális találat'} · {stores[hit.offer.store].name}</small></div><strong>{money(hit.offer.price)}</strong><ChevronRight size={16}/></button><button className="watch-dismiss" onClick={()=>onDismissWatch(hit)} aria-label="Eltüntetés"><X size={14}/></button></div>)}</div>}
       <div className="stores-row">
         {storeOrder.map(s => <button className="store-chip known-store-chip" key={s} onClick={()=>{setQuery(stores[s].name);setTab('search')}}><StoreBadge store={s} /><span>{stores[s].name}</span></button>)}
         {customRetailers.map(r => <button className="store-chip custom-store-chip" key={r.id} onClick={() => r.url && window.open(r.url, '_blank', 'noopener,noreferrer')}><span className="custom-store-badge" style={{background:r.color}}>{r.name.slice(0,6).toUpperCase()}</span><span>{r.name}</span></button>)}
@@ -706,8 +726,9 @@ function FullCard({ card, onClose }: { card:LoyaltyCard; onClose:()=>void }) {
   return <div className="full-card-screen"><div className="full-card-top"><button className="icon-btn" onClick={onClose}><X/></button><span>Pénztári nézet</span></div><div className="full-card-brand" style={{background:v.color,color:v.text}}><CardBadge card={card}/><h1>{card.label}</h1>{card.store==='custom'&&<small>{v.name}</small>}<p>{card.code}</p></div><div className="full-code"><CodeDisplay value={card.code} format={card.format} large/></div><p className="brightness-note">☀️ A képernyőt tartsd a leolvasó elé.</p></div>
 }
 
-function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWatchTerms,watchHits,onAddRetailer,onRemoveRetailer}:{customRetailers:CustomRetailer[];sourceStates:SourceState[];lastRefresh:string;watchTerms:string[];setWatchTerms:Dispatch<SetStateAction<string[]>>;watchHits:WatchHit[];onAddRetailer:()=>void;onRemoveRetailer:(id:string)=>void}){
+function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWatchTerms,watchHits,onOpenWatch,onDismissWatch,onRemoveWatch,onAddRetailer,onRemoveRetailer}:{customRetailers:CustomRetailer[];sourceStates:SourceState[];lastRefresh:string;watchTerms:string[];setWatchTerms:Dispatch<SetStateAction<string[]>>;watchHits:WatchHit[];onOpenWatch:(hit:WatchHit)=>void;onDismissWatch:(hit:WatchHit)=>void;onRemoveWatch:(term:string)=>void;onAddRetailer:()=>void;onRemoveRetailer:(id:string)=>void}){
   const [watchInput,setWatchInput]=useState('');
+  const [watchMode,setWatchMode]=useState<'new'|'all'>('new');
   function addWatch(){
     const value=watchInput.trim();
     if(!value)return;
@@ -715,20 +736,36 @@ function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWat
     setWatchInput('');
   }
   const scrollTo=(id:string)=>document.getElementById(id)?.scrollIntoView({behavior:'smooth',block:'start'});
+  const visibleHits=watchMode==='new'?watchHits.filter(hit=>hit.attention):watchHits;
+  const newCount=watchHits.filter(hit=>hit.attention).length;
+
   return <div className="screen profile-screen">
     <BrandHeader onBell={()=>scrollTo('watch-panel')}/>
     <div className="profile-hero"><div className="avatar"><UserRound/></div><h1>MULTI AKCIÓK</h1><p>Saját bevásárlási asszisztens</p></div>
     <div className="settings-list">
-      <button onClick={()=>scrollTo('watch-panel')}><Heart/> Figyelőlista <ChevronRight/></button>
+      <button onClick={()=>scrollTo('watch-panel')}><Heart/> Figyelőközpont {newCount>0&&<span className="settings-count">{newCount}</span>}<ChevronRight/></button>
       <button onClick={()=>scrollTo('source-panel')}><RefreshCw/> Adatforrások <ChevronRight/></button>
       <button onClick={onAddRetailer}><Plus/> Üzlet / forrás hozzáadása <ChevronRight/></button>
     </div>
 
     <div className="watch-panel" id="watch-panel">
-      <div className="section-title"><h2>Figyelőlista</h2><small>{watchTerms.length} figyelés</small></div>
+      <div className="section-title"><h2>Figyelőközpont</h2><small>{watchTerms.length} figyelés · {newCount} új</small></div>
       <div className="watch-input"><input value={watchInput} onChange={e=>setWatchInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addWatch()}} placeholder="pl. vaj, lazac, futócipő"/><button onClick={addWatch}><Plus size={17}/></button></div>
-      {watchTerms.length===0?<p className="watch-empty">Adj hozzá terméket vagy márkát, és frissítéskor megkeressük a legjobb aktuális ajánlatot.</p>:<div className="watch-chips">{watchTerms.map(term=>{const hit=watchHits.find(x=>x.term===term);return <div className="watch-chip" key={term}><div><b>{term}</b><small>{hit?stores[hit.offer.store].name+' · '+money(hit.offer.price):'Nincs aktuális találat'}</small></div><button onClick={()=>setWatchTerms(prev=>prev.filter(x=>x!==term))}><X size={14}/></button></div>})}</div>}
-      <p className="feature-note"><Bell size={13}/> Az appon belüli figyelés működik. Háttér push értesítést csak a külön szerveres értesítési réteg bekötése után jelölünk aktívnak.</p>
+      <div className="watch-tabs"><button className={watchMode==='new'?'active':''} onClick={()=>setWatchMode('new')}>Új {newCount>0&&<span>{newCount}</span>}</button><button className={watchMode==='all'?'active':''} onClick={()=>setWatchMode('all')}>Összes</button></div>
+
+      {watchTerms.length===0?<p className="watch-empty">Adj hozzá terméket vagy márkát. A figyelő minden napi frissítéskor megkeresi a legjobb aktuális ajánlatot.</p>:<>
+        {visibleHits.length===0&&<div className="watch-empty-state"><CheckCircle2 size={25}/><b>Nincs új figyelt ajánlat</b><small>Az összes figyelésedet az „Összes” fülön látod.</small></div>}
+        <div className="watch-center-list">{visibleHits.map(hit=><div className={'watch-center-card '+(hit.attention?'unread':'')} key={hit.term}>
+          <button className="watch-center-main" onClick={()=>onOpenWatch(hit)}>
+            <div className="watch-center-image"><Image src={hit.offer.image} alt="" fill sizes="54px"/></div>
+            <div><div className="watch-center-title"><b>{hit.term}</b>{hit.attention&&<span>ÚJ</span>}</div><strong>{hit.offer.name}</strong><small>{stores[hit.offer.store].name} · {hit.status==='lower'&&hit.previousBest?money(hit.previousBest)+' → ':''}{money(hit.offer.price)}</small><em>{new Date(hit.checkedAt).toLocaleString('hu-HU',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</em></div>
+            <ChevronRight size={17}/>
+          </button>
+          <div className="watch-center-actions"><button onClick={()=>onDismissWatch(hit)}>Eltüntetés</button><button className="danger-link" onClick={()=>onRemoveWatch(hit.term)}><Trash2 size={13}/> Figyelés törlése</button></div>
+        </div>)}</div>
+        <div className="watch-no-hit">{watchTerms.filter(term=>!watchHits.some(hit=>sameWatchTerm(hit.term,term))).map(term=><div key={term}><div><b>{term}</b><small>Jelenleg nincs találat</small></div><button onClick={()=>onRemoveWatch(term)}><Trash2 size={14}/></button></div>)}</div>
+      </>}
+      <p className="feature-note"><Bell size={13}/> Ez az appon belüli értesítési központ. A háttér push értesítés külön, későbbi szerveres lépcső lesz.</p>
     </div>
 
     <div className="source-panel" id="source-panel">
@@ -739,6 +776,7 @@ function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWat
     {customRetailers.length>0&&<div className="custom-retailers-panel"><div className="section-title"><h2>Saját üzletek</h2></div>{customRetailers.map(r=><div className="custom-retailer-row" key={r.id}><span style={{background:r.color}}>{r.name.slice(0,2).toUpperCase()}</span><div><b>{r.name}</b><small>{r.url||'Saját üzlet'}</small></div><button onClick={()=>onRemoveRetailer(r.id)} aria-label="Törlés"><Trash2 size={17}/></button></div>)}</div>}
   </div>
 }
+
 
 function BottomNav({tab,setTab}:{tab:Tab;setTab:(t:Tab)=>void}){
   const items:[Tab,ReactNode,string][]=[['home',<Home key="h"/>,'Kezdőlap'],['search',<Search key="s"/>,'Keresés'],['list',<ListChecks key="l"/>,'Lista'],['cards',<CreditCard key="c"/>,'Kártyák'],['profile',<UserRound key="p"/>,'Profil']];

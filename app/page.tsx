@@ -16,6 +16,7 @@ import { evaluateWatchTerms, acknowledgeWatchHit, dismissWatchHit, clearWatchSta
 import { assessDeal } from '@/lib/deal-quality';
 import { equivalentCandidates } from '@/lib/optimizer';
 import { normalizeSearch, rankOffers } from '@/lib/search';
+import { getPushState, enablePush, disablePush, syncExistingPushTerms, type PushState } from '@/lib/push-client';
 
 type Tab = 'home' | 'search' | 'list' | 'cards' | 'profile';
 type SourceState = { id:string; name:string; url:string; ok:boolean; checkedAt:string; count:number; note?:string };
@@ -156,6 +157,16 @@ export default function Page() {
     localStorage.setItem('multi-akciok-watch-terms', JSON.stringify(watchTerms));
     setWatchHits(evaluateWatchTerms(offers, watchTerms));
   }, [watchTerms, offers, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    syncExistingPushTerms(watchTerms).catch(()=>undefined);
+  }, [watchTerms, storageReady]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('watch') === '1') setTab('profile');
+  }, []);
 
   async function refreshOffers(termsOverride?: string[]) {
     setRefreshing(true);
@@ -783,6 +794,34 @@ function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWat
   const [watchMode,setWatchMode]=useState<'new'|'all'>('new');
   const [backupMessage,setBackupMessage]=useState('');
   const backupInput=useRef<HTMLInputElement>(null);
+  const [pushState,setPushState]=useState<PushState>('off');
+  const [pushBusy,setPushBusy]=useState(false);
+  const [pushMessage,setPushMessage]=useState('');
+
+  useEffect(()=>{
+    getPushState().then(setPushState).catch(()=>setPushState('unsupported'));
+  },[]);
+
+  async function turnOnPush(){
+    setPushBusy(true);setPushMessage('');
+    try{
+      const next=await enablePush(watchTerms);
+      setPushState(next);
+      setPushMessage('Háttér értesítések bekapcsolva.');
+    }catch(error){
+      setPushState(await getPushState().catch(()=> 'unsupported' as PushState));
+      setPushMessage(error instanceof Error?error.message:'Az értesítés nem kapcsolható be.');
+    }finally{setPushBusy(false)}
+  }
+
+  async function turnOffPush(){
+    setPushBusy(true);setPushMessage('');
+    try{
+      const next=await disablePush();
+      setPushState(next);
+      setPushMessage('Háttér értesítések kikapcsolva.');
+    }finally{setPushBusy(false)}
+  }
   function addWatch(){
     const value=watchInput.trim();
     if(!value)return;
@@ -820,7 +859,14 @@ function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWat
         </div>)}</div>
         <div className="watch-no-hit">{watchTerms.filter(term=>!watchHits.some(hit=>sameWatchTerm(hit.term,term))).map(term=><div key={term}><div><b>{term}</b><small>Jelenleg nincs találat</small></div><button onClick={()=>onRemoveWatch(term)}><Trash2 size={14}/></button></div>)}</div>
       </>}
-      <p className="feature-note"><Bell size={13}/> Ez az appon belüli értesítési központ. A háttér push értesítés külön, későbbi szerveres lépcső lesz.</p>
+      <div className={'push-control '+(pushState==='on'?'enabled':'')}>
+        <div className="push-control-head"><Bell size={18}/><div><b>Háttér értesítések</b><small>{pushState==='on'?'Aktív ezen az eszközön':pushState==='denied'?'Az értesítés le van tiltva':pushState==='unsupported'?'Ezen a böngészőn nem támogatott':'Nincs bekapcsolva'}</small></div><span>{pushState==='on'?'BE':'KI'}</span></div>
+        {pushState==='on'
+          ? <button disabled={pushBusy} onClick={turnOffPush}>Kikapcsolás</button>
+          : <button disabled={pushBusy||pushState==='unsupported'||pushState==='denied'} onClick={turnOnPush}>{pushBusy?'Kapcsolódás…':'Bekapcsolás'}</button>}
+        <p>iPhone-on a push a Főképernyőre telepített MULTI AKCIÓK PWA-ban működik. Új vagy olcsóbb figyelt ajánlatnál kapsz jelzést; a részleteket az app megnyitása után látod.</p>
+        {pushMessage&&<em>{pushMessage}</em>}
+      </div>
     </div>
 
     <div className="backup-panel" id="backup-panel">

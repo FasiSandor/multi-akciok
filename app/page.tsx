@@ -654,12 +654,15 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
     return {picks,total:picks.reduce((sum,p)=>sum+p.cost,0),used};
   }
 
-  const constrainedBest=storeLimit==='all'
-    ? null
+  const constrainedPlans=storeLimit==='all'
+    ? []
     : storeCombinations(storeLimit)
         .map(planForStores)
-        .filter((x):x is NonNullable<typeof x>=>!!x)
-        .sort((a,b)=>a.total-b.total||a.used.length-b.used.length)[0]??null;
+        .filter(Boolean) as Array<{picks:PlanPick[];total:number;used:StoreId[]}>;
+
+  const constrainedBest=storeLimit==='all'
+    ? null
+    : constrainedPlans.sort((a,b)=>a.total-b.total||a.used.length-b.used.length)[0]??null;
 
   const plan=storeLimit==='all'?mixedPicks:(constrainedBest?.picks??[]);
   const planTotal=storeLimit==='all'?mixedTotal:(constrainedBest?.total??0);

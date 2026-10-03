@@ -1,6 +1,6 @@
 const API_CACHE='multi-akciok-offers-v1';
 
-self.addEventListener('install',event=>{
+self.addEventListener('install',()=>{
   self.skipWaiting();
 });
 
@@ -19,24 +19,18 @@ self.addEventListener('fetch',event=>{
 
   event.respondWith((async()=>{
     const cache=await caches.open(API_CACHE);
-    const cached=await cache.match(event.request);
-    const network=fetch(event.request)
-      .then(async response=>{
-        if(response.ok) await cache.put(event.request,response.clone());
-        return response;
-      })
-      .catch(()=>null);
-
-    if(cached){
-      event.waitUntil(network.then(()=>undefined));
-      return cached;
+    try{
+      const response=await fetch(event.request);
+      if(response.ok) await cache.put(event.request,response.clone());
+      return response;
+    }catch{
+      const cached=await cache.match(event.request);
+      if(cached) return cached;
+      return new Response(JSON.stringify({offers:[],sourceStates:[],campaigns:[],offline:true}),{
+        status:503,
+        headers:{'Content-Type':'application/json'}
+      });
     }
-
-    const fresh=await network;
-    return fresh||new Response(JSON.stringify({offers:[],sourceStates:[],campaigns:[],offline:true}),{
-      status:503,
-      headers:{'Content-Type':'application/json'}
-    });
   })());
 });
 

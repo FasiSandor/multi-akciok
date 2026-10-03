@@ -271,7 +271,7 @@ export default function Page() {
     const data=JSON.parse(await file.text()) as {
       app?:string;version?:number;cards?:LoyaltyCard[];listIds?:string[];
       listQuantities?:Record<string,number>;watchTerms?:string[];customRetailers?:CustomRetailer[];
-      localWatchState?:string|null;
+      localWatchState?:string|null; optimizerStores?:string|null;
     };
     if(data.app!=='MULTI AKCIÓK'||data.version!==1) throw new Error('Nem MULTI AKCIÓK mentés.');
     if(Array.isArray(data.cards)) setCards(data.cards);
@@ -280,6 +280,7 @@ export default function Page() {
     if(Array.isArray(data.watchTerms)) setWatchTerms(data.watchTerms);
     if(Array.isArray(data.customRetailers)) setCustomRetailers(data.customRetailers);
     if(typeof data.localWatchState==='string') localStorage.setItem('multi-akciok-watch-state-v2',data.localWatchState);
+    if(typeof data.optimizerStores==='string') localStorage.setItem('multi-akciok-allowed-stores-v1',data.optimizerStores);
     setWatchHits(evaluateWatchTerms(offers,Array.isArray(data.watchTerms)?data.watchTerms:watchTerms));
   }
 
@@ -509,6 +510,34 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
   const [bulkInput,setBulkInput]=useState('');
   const [unresolved,setUnresolved]=useState<ShoppingMatch[]>([]);
   const [bulkMessage,setBulkMessage]=useState('');
+  const [allowedStores,setAllowedStores]=useState<StoreId[]>(storeOrder);
+  const [allowedStoresReady,setAllowedStoresReady]=useState(false);
+
+  useEffect(()=>{
+    try{
+      const raw=JSON.parse(localStorage.getItem('multi-akciok-allowed-stores-v1')||'null');
+      if(Array.isArray(raw)){
+        const valid=raw.filter((value:unknown):value is StoreId=>typeof value==='string'&&storeOrder.includes(value as StoreId));
+        if(valid.length) setAllowedStores(valid);
+      }
+    }catch{}
+    setAllowedStoresReady(true);
+  },[]);
+
+  useEffect(()=>{
+    if(!allowedStoresReady) return;
+    localStorage.setItem('multi-akciok-allowed-stores-v1',JSON.stringify(allowedStores));
+  },[allowedStores,allowedStoresReady]);
+
+  function toggleAllowedStore(store:StoreId){
+    setAllowedStores(prev=>{
+      if(prev.includes(store)){
+        if(prev.length===1) return prev;
+        return prev.filter(x=>x!==store);
+      }
+      return [...prev,store];
+    });
+  }
 
   function norm(value:string){
     return value.toLocaleLowerCase('hu').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
@@ -590,6 +619,7 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
 
   function rankedCandidates(item:Offer,qty:number,store?:StoreId){
     return equivalentCandidates(item,offers,qty,store)
+      .filter(candidate=>allowedStores.includes(candidate.offer.store))
       .filter(candidate=>automaticPromoUsable(candidate.offer)||!!candidate.offer.oldPrice||candidate.offer.id===item.id)
       .map(candidate=>({
         ...candidate,
@@ -607,9 +637,11 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
   }).filter(Boolean) as PlanPick[];
   const mixedTotal=mixedPicks.reduce((sum,x)=>sum+x.cost,0);
 
+  const availableStoreOrder=storeOrder.filter(store=>allowedStores.includes(store));
+
   const bestByEntryStore=entries.map(entry=>{
     const result=new Map<StoreId,PlanPick>();
-    for(const store of storeOrder){
+    for(const store of availableStoreOrder){
       const candidate=rankedCandidates(entry.offer,entry.qty,store)[0];
       if(candidate){
         result.set(store,{
@@ -629,8 +661,8 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
     const result:StoreId[][]=[];
     function walk(start:number,current:StoreId[]){
       if(current.length===size){result.push([...current]);return}
-      for(let i=start;i<storeOrder.length;i++){
-        current.push(storeOrder[i]);
+      for(let i=start;i<availableStoreOrder.length;i++){
+        current.push(availableStoreOrder[i]);
         walk(i+1,current);
         current.pop();
       }
@@ -654,9 +686,11 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
     return {picks,total:picks.reduce((sum,p)=>sum+p.cost,0),used};
   }
 
+  const effectiveLimit=storeLimit==='all'?'all':Math.min(storeLimit,availableStoreOrder.length) as 1|2|3;
+
   const constrainedPlans=storeLimit==='all'
     ? []
-    : storeCombinations(storeLimit)
+    : storeCombinations(effectiveLimit)
         .map(planForStores)
         .filter(Boolean) as Array<{picks:PlanPick[];total:number;used:StoreId[]}>;
 
@@ -683,6 +717,11 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
     <div className="screen list-screen">
       <div className="title-with-plus"><div><ListChecks/><h1>Bevásárlólista</h1></div><button className="round-plus" onClick={()=>setAddOpen(v=>!v)}><Plus/></button></div>
       <div className="store-limit-control"><span>Maximum üzletek</span><div>{([['1',1],['2',2],['3',3],['∞','all']] as const).map(([label,value])=><button key={label} className={storeLimit===value?'active':''} onClick={()=>setStoreLimit(value)}>{label}</button>)}</div></div>
+      <div className="allowed-stores-panel">
+        <div className="allowed-stores-head"><span>Használható üzletek</span><button onClick={()=>setAllowedStores(storeOrder)}>Mind</button></div>
+        <div className="allowed-store-chips">{storeOrder.map(store=><button key={store} className={allowedStores.includes(store)?'active':''} onClick={()=>toggleAllowedStore(store)}><StoreBadge store={store} compact/><span>{stores[store].name}</span></button>)}</div>
+        <small>{allowedStores.length} üzletből számol az optimalizáló.</small>
+      </div>
 
       <div className="quick-list-card">
         <div className="quick-list-head"><Sparkles size={18}/><div><b>Gyors lista</b><small>Írd vagy másold be egyszerre a bevásárlást.</small></div></div>

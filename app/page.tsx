@@ -217,6 +217,39 @@ export default function Page() {
     setWatchTerms(prev=>prev.filter(x=>!sameWatchTerm(x,term)));
   }
 
+  function exportBackup() {
+    const payload={
+      app:'MULTI AKCIÓK',
+      version:1,
+      exportedAt:new Date().toISOString(),
+      cards,listIds,listQuantities,watchTerms,customRetailers,
+      localWatchState:localStorage.getItem('multi-akciok-watch-state-v2')
+    };
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='multi-akciok-mentes-'+new Date().toISOString().slice(0,10)+'.json';
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+
+  async function importBackup(file:File) {
+    const data=JSON.parse(await file.text()) as {
+      app?:string;version?:number;cards?:LoyaltyCard[];listIds?:string[];
+      listQuantities?:Record<string,number>;watchTerms?:string[];customRetailers?:CustomRetailer[];
+      localWatchState?:string|null;
+    };
+    if(data.app!=='MULTI AKCIÓK'||data.version!==1) throw new Error('Nem MULTI AKCIÓK mentés.');
+    if(Array.isArray(data.cards)) setCards(data.cards);
+    if(Array.isArray(data.listIds)) setListIds(data.listIds);
+    if(data.listQuantities&&typeof data.listQuantities==='object') setListQuantities(data.listQuantities);
+    if(Array.isArray(data.watchTerms)) setWatchTerms(data.watchTerms);
+    if(Array.isArray(data.customRetailers)) setCustomRetailers(data.customRetailers);
+    if(typeof data.localWatchState==='string') localStorage.setItem('multi-akciok-watch-state-v2',data.localWatchState);
+    setWatchHits(evaluateWatchTerms(offers,Array.isArray(data.watchTerms)?data.watchTerms:watchTerms));
+  }
+
   return (
     <main className="app-shell">
       <section className="phone-app">
@@ -231,7 +264,7 @@ export default function Page() {
         ) : tab === 'cards' ? (
           <CardsView cards={cards} setCards={setCards} onAdd={() => setCardModal(true)} onOpen={setActiveCard} />
         ) : (
-          <ProfileView customRetailers={customRetailers} sourceStates={sourceStates} lastRefresh={lastRefresh} watchTerms={watchTerms} setWatchTerms={setWatchTerms} watchHits={watchHits} onOpenWatch={openWatchHit} onDismissWatch={dismissHit} onRemoveWatch={removeWatchTerm} onAddRetailer={() => setRetailerModal(true)} onRemoveRetailer={(id) => setCustomRetailers(prev => prev.filter(x => x.id !== id))} />
+          <ProfileView customRetailers={customRetailers} sourceStates={sourceStates} lastRefresh={lastRefresh} watchTerms={watchTerms} setWatchTerms={setWatchTerms} watchHits={watchHits} onOpenWatch={openWatchHit} onDismissWatch={dismissHit} onRemoveWatch={removeWatchTerm} onExportBackup={exportBackup} onImportBackup={importBackup} onAddRetailer={() => setRetailerModal(true)} onRemoveRetailer={(id) => setCustomRetailers(prev => prev.filter(x => x.id !== id))} />
         )}
         {!selected && <BottomNav tab={tab} setTab={setTab} />}
       </section>
@@ -704,21 +737,40 @@ function AddRetailerModal({onClose,onSave}:{onClose:()=>void;onSave:(r:CustomRet
   const [url,setUrl]=useState('');
   const [color,setColor]=useState('#0b2545');
   const [note,setNote]=useState('');
+  const [error,setError]=useState('');
+
+  function normalizedUrl(){
+    const raw=url.trim();
+    if(!raw) return undefined;
+    const value=/^https?:\/\//i.test(raw)?raw:'https://'+raw;
+    try{
+      const parsed=new URL(value);
+      if(!['http:','https:'].includes(parsed.protocol)) return null;
+      return parsed.toString();
+    }catch{return null}
+  }
+
   function save(){
     if(!name.trim()) return;
-    const normalized=url.trim() && !/^https?:\/\//i.test(url.trim()) ? `https://${url.trim()}` : url.trim();
+    const normalized=normalizedUrl();
+    if(normalized===null){setError('Érvényes http/https webcímet adj meg.');return}
+    setError('');
     onSave({id:crypto.randomUUID(),name:name.trim(),url:normalized||undefined,color,note:note.trim()||undefined});
   }
+
   return <div className="modal-backdrop"><div className="modal-card">
     <div className="modal-head"><div><Plus/><h2>Üzlet hozzáadása</h2></div><button className="icon-btn" onClick={onClose}><X/></button></div>
-    <p className="muted">Saját üzletet vagy új akcióforrást is felvehetsz. Az URL megmarad a gyors eléréshez.</p>
-    <label>Üzlet neve<input value={name} onChange={e=>setName(e.target.value)} placeholder="pl. Rossmann"/></label>
-    <label>Akciós oldal / webcím<input value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://..." inputMode="url"/></label>
+    <p className="muted">Saját üzletet gyorslinkként adhatsz hozzá. Automatikus akcióimport csak a külön ellenőrzött, beépített forrásoknál működik.</p>
+    <label>Üzlet neve<input value={name} onChange={e=>setName(e.target.value)} placeholder="pl. helyi bolt"/></label>
+    <label>Akciós oldal / webcím<input value={url} onChange={e=>{setUrl(e.target.value);setError('')}} placeholder="https://..." inputMode="url"/></label>
+    {error&&<div className="form-error">{error}</div>}
+    {url.trim()&&normalizedUrl()!==null&&<div className="source-mode-note"><ExternalLink size={14}/><div><b>Gyorslink</b><small>A linket eltároljuk és megnyitjuk, de automatikus szerveres importot nem indítunk róla.</small></div></div>}
     <label>Szín<div className="color-input-row"><input type="color" value={color} onChange={e=>setColor(e.target.value)}/><span className="color-preview" style={{background:color}}>{name.trim().slice(0,8).toUpperCase()||'ÜZLET'}</span></div></label>
-    <label>Megjegyzés<input value={note} onChange={e=>setNote(e.target.value)} placeholder="pl. kártyás árak, online akciók"/></label>
+    <label>Megjegyzés<input value={note} onChange={e=>setNote(e.target.value)} placeholder="pl. helyi kedvezmények"/></label>
     <button className="primary wide" disabled={!name.trim()} onClick={save}><CheckCircle2/> Üzlet mentése</button>
   </div></div>
 }
+
 
 function FullCard({ card, onClose }: { card:LoyaltyCard; onClose:()=>void }) {
   const v=cardVisual(card);
@@ -726,9 +778,11 @@ function FullCard({ card, onClose }: { card:LoyaltyCard; onClose:()=>void }) {
   return <div className="full-card-screen"><div className="full-card-top"><button className="icon-btn" onClick={onClose}><X/></button><span>Pénztári nézet</span></div><div className="full-card-brand" style={{background:v.color,color:v.text}}><CardBadge card={card}/><h1>{card.label}</h1>{card.store==='custom'&&<small>{v.name}</small>}<p>{card.code}</p></div><div className="full-code"><CodeDisplay value={card.code} format={card.format} large/></div><p className="brightness-note">☀️ A képernyőt tartsd a leolvasó elé.</p></div>
 }
 
-function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWatchTerms,watchHits,onOpenWatch,onDismissWatch,onRemoveWatch,onAddRetailer,onRemoveRetailer}:{customRetailers:CustomRetailer[];sourceStates:SourceState[];lastRefresh:string;watchTerms:string[];setWatchTerms:Dispatch<SetStateAction<string[]>>;watchHits:WatchHit[];onOpenWatch:(hit:WatchHit)=>void;onDismissWatch:(hit:WatchHit)=>void;onRemoveWatch:(term:string)=>void;onAddRetailer:()=>void;onRemoveRetailer:(id:string)=>void}){
+function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWatchTerms,watchHits,onOpenWatch,onDismissWatch,onRemoveWatch,onExportBackup,onImportBackup,onAddRetailer,onRemoveRetailer}:{customRetailers:CustomRetailer[];sourceStates:SourceState[];lastRefresh:string;watchTerms:string[];setWatchTerms:Dispatch<SetStateAction<string[]>>;watchHits:WatchHit[];onOpenWatch:(hit:WatchHit)=>void;onDismissWatch:(hit:WatchHit)=>void;onRemoveWatch:(term:string)=>void;onExportBackup:()=>void;onImportBackup:(file:File)=>Promise<void>;onAddRetailer:()=>void;onRemoveRetailer:(id:string)=>void}){
   const [watchInput,setWatchInput]=useState('');
   const [watchMode,setWatchMode]=useState<'new'|'all'>('new');
+  const [backupMessage,setBackupMessage]=useState('');
+  const backupInput=useRef<HTMLInputElement>(null);
   function addWatch(){
     const value=watchInput.trim();
     if(!value)return;
@@ -746,6 +800,7 @@ function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWat
       <button onClick={()=>scrollTo('watch-panel')}><Heart/> Figyelőközpont {newCount>0&&<span className="settings-count">{newCount}</span>}<ChevronRight/></button>
       <button onClick={()=>scrollTo('source-panel')}><RefreshCw/> Adatforrások <ChevronRight/></button>
       <button onClick={onAddRetailer}><Plus/> Üzlet / forrás hozzáadása <ChevronRight/></button>
+      <button onClick={()=>document.getElementById('backup-panel')?.scrollIntoView({behavior:'smooth',block:'start'})}><WalletCards/> Adatmentés <ChevronRight/></button>
     </div>
 
     <div className="watch-panel" id="watch-panel">
@@ -766,6 +821,14 @@ function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWat
         <div className="watch-no-hit">{watchTerms.filter(term=>!watchHits.some(hit=>sameWatchTerm(hit.term,term))).map(term=><div key={term}><div><b>{term}</b><small>Jelenleg nincs találat</small></div><button onClick={()=>onRemoveWatch(term)}><Trash2 size={14}/></button></div>)}</div>
       </>}
       <p className="feature-note"><Bell size={13}/> Ez az appon belüli értesítési központ. A háttér push értesítés külön, későbbi szerveres lépcső lesz.</p>
+    </div>
+
+    <div className="backup-panel" id="backup-panel">
+      <div className="section-title"><h2>Adatmentés</h2><small>helyi adatok</small></div>
+      <p>A hűségkártyák, lista, figyelések és saját üzletek ezen az eszközön vannak. Mentsd le őket telefoncsere vagy böngészőadat-törlés előtt.</p>
+      <div className="backup-actions"><button onClick={()=>{onExportBackup();setBackupMessage('Mentés elkészült.')}}><ExternalLink size={16}/> Mentés készítése</button><button onClick={()=>backupInput.current?.click()}><ImagePlus size={16}/> Visszaállítás</button></div>
+      <input ref={backupInput} className="backup-file-input" type="file" accept="application/json,.json" onChange={async e=>{const file=e.target.files?.[0];if(!file)return;try{await onImportBackup(file);setBackupMessage('Mentés sikeresen visszaállítva.')}catch(error){setBackupMessage(error instanceof Error?error.message:'A mentés nem olvasható.')}finally{e.currentTarget.value=''}}}/>
+      {backupMessage&&<div className="backup-message">{backupMessage}</div>}
     </div>
 
     <div className="source-panel" id="source-panel">

@@ -1,5 +1,7 @@
 import type { Offer } from './types';
 
+export type PricePoint = { date: string; price: number };
+
 export type HistoryStats = {
   samples: number;
   firstDate: string;
@@ -7,9 +9,9 @@ export type HistoryStats = {
   average: number;
   minimum: number;
   maximum: number;
+  points: PricePoint[];
 };
 
-type PricePoint = { date: string; price: number };
 type HistoryStore = Record<string, PricePoint[]>;
 
 const STORAGE_KEY = 'multi-akciok-price-history-v1';
@@ -63,6 +65,7 @@ export function readOfferHistoryStats(offer: Offer): HistoryStats | null {
     lastDate: points[points.length-1].date,
     average: Math.round(prices.reduce((a,b)=>a+b,0)/prices.length),
     minimum: Math.min(...prices),
-    maximum: Math.max(...prices)
+    maximum: Math.max(...prices),
+    points
   };
 }

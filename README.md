@@ -9,7 +9,8 @@ Mobil-first magyar akciókereső, ár-összehasonlító és digitális hűségk�
 - termékkártyák képpel, akciós árral, régi árral és egységárral
 - keresés és bolti szűrés
 - termékár-összehasonlító nézet
-- bevásárlólista és költség-összesítő
+- 90 napos szerveres árhistorika, pontgrafikon és csak elegendő mért adatból számolt „Tényleg jó akció?” értékelés
+- bevásárlólista és kiszerelés-/mennyiségérzékeny költségoptimalizáló, szigorú termékazonosítással
 - digitális hűségkártya-tárca
 - kamera vagy screenshot alapú QR/vonalkód beolvasás, ahol a böngésző BarcodeDetector API-ja elérhető
 - kézi kódmegadás és Saját üzlet opció bármilyen további kártyához

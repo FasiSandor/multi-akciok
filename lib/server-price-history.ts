@@ -1,5 +1,10 @@
 import 'server-only';
 
+export type ServerPricePoint = {
+  date: string;
+  price: number;
+};
+
 export type ServerHistoryStats = {
   samples: number;
   firstDate: string;
@@ -7,6 +12,7 @@ export type ServerHistoryStats = {
   average: number;
   minimum: number;
   maximum: number;
+  points: ServerPricePoint[];
 };
 
 type SnapshotRow = {
@@ -50,15 +56,21 @@ export async function readOfferHistoryStats(offerKey: string, days = 90): Promis
   const rows = await response.json() as SnapshotRow[];
   if (!Array.isArray(rows) || !rows.length) return null;
 
-  const prices = rows.map(x => Number(x.price)).filter(x => Number.isFinite(x) && x > 0);
-  if (!prices.length) return null;
+  const points = rows
+    .map(row => ({ date: String(row.observed_date), price: Number(row.price) }))
+    .filter(point => /^\d{4}-\d{2}-\d{2}/.test(point.date) && Number.isFinite(point.price) && point.price > 0)
+    .map(point => ({ ...point, date: point.date.slice(0,10) }));
+
+  if (!points.length) return null;
+  const prices = points.map(x => x.price);
 
   return {
     samples: prices.length,
-    firstDate: rows[0].observed_date,
-    lastDate: rows[rows.length - 1].observed_date,
+    firstDate: points[0].date,
+    lastDate: points[points.length - 1].date,
     average: Math.round(prices.reduce((a,b)=>a+b,0)/prices.length),
     minimum: Math.min(...prices),
-    maximum: Math.max(...prices)
+    maximum: Math.max(...prices),
+    points
   };
 }

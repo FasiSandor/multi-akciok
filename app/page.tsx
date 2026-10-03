@@ -11,8 +11,10 @@ import type { Campaign, CustomRetailer, LoyaltyCard, Offer, StoreId } from '@/li
 import { fallbackOffers } from '@/lib/fallback-offers';
 import { knownStoreOrder, offerStoreOrder, stores } from '@/lib/stores';
 import { CodeDisplay } from '@/components/CodeDisplay';
-import { recordOfferHistory, readOfferHistoryStats, type HistoryStats } from '@/lib/client-history';
+import { recordOfferHistory, readOfferHistoryStats, type HistoryStats, type PricePoint } from '@/lib/client-history';
 import { evaluateWatchTerms, type WatchHit } from '@/lib/client-watch';
+import { assessDeal } from '@/lib/deal-quality';
+import { equivalentCandidates } from '@/lib/optimizer';
 
 type Tab = 'home' | 'search' | 'list' | 'cards' | 'profile';
 type SourceState = { id:string; name:string; url:string; ok:boolean; checkedAt:string; count:number; note?:string };
@@ -327,14 +329,38 @@ function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; qu
   );
 }
 
+function HistoryChart({points}:{points:PricePoint[]}) {
+  if(points.length<2) return <div className="history-chart-empty">Még nincs elég pont a grafikonhoz.</div>;
+  const width=320,height=120,pad=12;
+  const values=points.map(p=>p.price);
+  const min=Math.min(...values),max=Math.max(...values);
+  const span=Math.max(1,max-min);
+  const coords=points.map((p,i)=>{
+    const x=pad+(i/(points.length-1))*(width-pad*2);
+    const y=height-pad-((p.price-min)/span)*(height-pad*2);
+    return {x,y,p};
+  });
+  const path=coords.map((c,i)=>(i?'L':'M')+c.x.toFixed(1)+' '+c.y.toFixed(1)).join(' ');
+  return <div className="history-chart-wrap">
+    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Árhistorika grafikon">
+      <path className="history-grid-line" d={`M${pad} ${height/2} H${width-pad}`}/>
+      <path className="history-line" d={path}/>
+      {coords.map((c,i)=><circle key={i} className="history-dot" cx={c.x} cy={c.y} r="3"/>)}
+    </svg>
+    <div className="history-axis"><span>{new Date(points[0].date).toLocaleDateString('hu-HU',{month:'short',day:'numeric'})}</span><span>{new Date(points[points.length-1].date).toLocaleDateString('hu-HU',{month:'short',day:'numeric'})}</span></div>
+  </div>;
+}
+
 function OfferDetail({ offer, allOffers, onBack, onWatch, watched }: { offer: Offer; allOffers: Offer[]; onBack: () => void; onWatch:()=>void; watched:boolean }) {
   const [history, setHistory] = useState<HistoryStats | null>(null);
+  const [detailTab,setDetailTab]=useState<'prices'|'history'>('prices');
+
   useEffect(() => {
     let active = true;
     const local = readOfferHistoryStats(offer);
     setHistory(local);
 
-    fetch('/api/history?offerKey=' + encodeURIComponent(offer.id), { cache: 'no-store' })
+    fetch('/api/history?offerKey=' + encodeURIComponent(offer.id) + '&days=90', { cache: 'no-store' })
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         if (!active || !data?.history) return;
@@ -345,22 +371,45 @@ function OfferDetail({ offer, allOffers, onBack, onWatch, watched }: { offer: Of
 
     return () => { active = false; };
   }, [offer]);
-  const comparable = allOffers.filter(o => o.category === offer.category || o.name.toLowerCase().includes(offer.name.split(' ')[0].toLowerCase())).slice(0,5);
+
+  const comparable = allOffers
+    .filter(o => o.id!==offer.id)
+    .map(o=>({offer:o,confidence:equivalentCandidates(offer,[o],1)[0]?.confidence??0}))
+    .filter(x=>x.confidence>=0.64)
+    .sort((a,b)=>b.confidence-a.confidence||a.offer.price-b.offer.price)
+    .slice(0,4)
+    .map(x=>x.offer);
+
+  const deal=assessDeal(history,offer.price);
+
   return (
     <div className="screen detail-screen">
       <div className="detail-nav"><button className="icon-btn" onClick={onBack}><ArrowLeft/></button><div><button className="icon-btn" onClick={onWatch} aria-label={watched?'Figyelve':'Figyelés'}><Heart fill={watched?'currentColor':'none'}/></button>{offer.sourceUrl&&<a className="icon-btn" href={offer.sourceUrl} target="_blank" rel="noreferrer" aria-label="Forrás megnyitása"><ExternalLink/></a>}</div></div>
       <div className="hero-product"><Image src={offer.image} alt={offer.name} fill sizes="80vw" /></div>
       <h1>{offer.name}</h1><p>{offer.unitLabel}</p>{offer.conditionText&&<div className="condition-note detail-condition">{offer.conditionText}</div>}{offer.priceScope&&<div className="price-scope detail-scope">{offer.priceScope}</div>}
-      <div className="segmented"><button className="active">Árak és üzletek</button><button>Árhistorika</button></div>
-      <div className="compare-list">
-        {[offer, ...comparable.filter(x=>x.id!==offer.id)].slice(0,5).map((o,i)=><div className="compare-row" key={o.id}>
-          <StoreBadge store={o.store}/><div><strong>{stores[o.store].name}</strong>{o.loyaltyOnly&&<small>{o.conditionText||'Kártyás ár'}</small>}</div><div className="compare-price"><b>{money(o.price)}</b>{o.oldPrice&&<del>{money(o.oldPrice)}</del>}{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><Heart size={18}/>
-        </div>)}
-      </div>
-      <div className="deal-score"><BarChart3 size={31}/><div><strong>{history && history.samples > 1 ? 'Saját árhistorika' : 'Árhistorika épül'}</strong><span>Most: <b>{money(offer.price)}</b>{history && history.samples > 1 ? <><br/>Átlag: <b>{money(history.average)}</b> · minimum: <b>{money(history.minimum)}</b></> : <><br/>Az app csak valóban összegyűjtött korábbi árakból számol.</>}</span></div>{history && history.samples > 1 ? <div className="history-pending">{history.samples} nap<small>{offer.price < history.average ? 'átlag alatt' : 'mért adat'}</small></div> : <div className="history-pending">1. nap<small>adatgyűjtés</small></div>}</div>
+      <div className="segmented"><button className={detailTab==='prices'?'active':''} onClick={()=>setDetailTab('prices')}>Árak és üzletek</button><button className={detailTab==='history'?'active':''} onClick={()=>setDetailTab('history')}>Árhistorika</button></div>
+
+      {detailTab==='prices'?<>
+        <div className="compare-list">
+          {[offer, ...comparable].slice(0,5).map(o=><div className="compare-row" key={o.id}>
+            <StoreBadge store={o.store}/><div><strong>{stores[o.store].name}</strong>{o.loyaltyOnly&&<small>{o.conditionText||'Kártyás ár'}</small>}</div><div className="compare-price"><b>{money(o.price)}</b>{o.oldPrice&&<del>{money(o.oldPrice)}</del>}{discount(o)>0&&<span className="discount inline">-{discount(o)}%</span>}</div><Heart size={18}/>
+          </div>)}
+        </div>
+      </>:<>
+        <HistoryChart points={history?.points??[]}/>
+        <div className="history-stat-grid">
+          <div><small>Mért napok</small><b>{history?.samples??0}</b></div>
+          <div><small>Minimum</small><b>{history?money(history.minimum):'—'}</b></div>
+          <div><small>Átlag</small><b>{history?money(history.average):'—'}</b></div>
+          <div><small>Maximum</small><b>{history?money(history.maximum):'—'}</b></div>
+        </div>
+      </>}
+
+      <div className={'deal-score deal-'+deal.state}><BarChart3 size={31}/><div><strong>{deal.title}</strong><span>{deal.detail}{history&&history.samples>=3?<><br/>Mért tartomány: <b>{money(history.minimum)} – {money(history.maximum)}</b></>:null}</span></div>{deal.score?<div className="score">{deal.score}<small>/100</small></div>:<div className="history-pending">{history?.samples??1}. nap<small>adatgyűjtés</small></div>}</div>
     </div>
   );
 }
+
 
 function ListView({ offers, listIds, setListIds, quantities, setQuantities, cards }: {
   offers: Offer[];
@@ -377,37 +426,17 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
   function norm(value:string){
     return value.toLocaleLowerCase('hu').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
   }
-  function tokens(value:string){
-    return norm(value).split(' ').filter(x=>x.length>=4 && !['friss','akcios','termek','felnott','gyerek','ferfi'].includes(x));
-  }
-  function samePack(a:Offer,b:Offer){
-    const aUnit=norm(a.unitLabel||'1 db');
-    const bUnit=norm(b.unitLabel||'1 db');
-    return aUnit===bUnit;
-  }
-  function similarity(a:Offer,b:Offer){
-    if(a.category!==b.category || !samePack(a,b)) return 0;
-    const ta=tokens(a.name),tb=tokens(b.name);
-    if(!ta.length||!tb.length) return 0;
-    const overlap=ta.filter(x=>tb.some(y=>y===x||y.includes(x)||x.includes(y))).length;
-    return overlap/Math.max(ta.length,tb.length);
-  }
+
   const loyaltyStores=new Set(cards.map(card=>card.store));
   function automaticPromoUsable(offer:Offer){
     if(/digitális kupon/i.test(offer.conditionText||'')) return false;
     if(offer.loyaltyOnly&&!loyaltyStores.has(offer.store)) return false;
     return true;
   }
-  function unitPriceForQuantity(offer:Offer,qty:number){
+  function unitPackPrice(offer:Offer,packs:number){
     if(!automaticPromoUsable(offer)&&offer.oldPrice) return offer.oldPrice;
-    if(offer.minQuantity&&qty<offer.minQuantity&&offer.oldPrice) return offer.oldPrice;
+    if(offer.minQuantity&&packs<offer.minQuantity&&offer.oldPrice) return offer.oldPrice;
     return offer.price;
-  }
-  function alternatives(item:Offer,qty:number,store?:StoreId){
-    return offers
-      .filter(o=>(!store||o.store===store) && (o.id===item.id || similarity(item,o)>=0.5))
-      .filter(o=>automaticPromoUsable(o)||!!o.oldPrice||o.id===item.id)
-      .sort((a,b)=>unitPriceForQuantity(a,qty)-unitPriceForQuantity(b,qty));
   }
   function quantityFor(id:string){
     return Math.max(1,Math.min(99,Math.round(quantities[id]||1)));
@@ -431,26 +460,41 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
     return {offer,qty:quantityFor(offer.id)};
   }).filter(Boolean) as Array<{offer:Offer;qty:number}>;
 
-  const originalTotal=entries.reduce((sum,x)=>sum+unitPriceForQuantity(x.offer,x.qty)*x.qty,0);
-  const mixedPicks=entries.map(entry=>({source:entry.offer,offer:alternatives(entry.offer,entry.qty)[0]??entry.offer,qty:entry.qty}));
-  const mixedTotal=mixedPicks.reduce((sum,x)=>sum+unitPriceForQuantity(x.offer,x.qty)*x.qty,0);
+  function rankedCandidates(item:Offer,qty:number,store?:StoreId){
+    return equivalentCandidates(item,offers,qty,store)
+      .filter(candidate=>automaticPromoUsable(candidate.offer)||!!candidate.offer.oldPrice||candidate.offer.id===item.id)
+      .map(candidate=>({
+        ...candidate,
+        cost:unitPackPrice(candidate.offer,candidate.requiredPacks)*candidate.requiredPacks
+      }))
+      .sort((a,b)=>a.cost-b.cost||b.confidence-a.confidence);
+  }
+
+  const originalTotal=entries.reduce((sum,x)=>sum+unitPackPrice(x.offer,x.qty)*x.qty,0);
+  const mixedPicks=entries.map(entry=>{
+    const candidate=rankedCandidates(entry.offer,entry.qty)[0];
+    return candidate?{source:entry.offer,offer:candidate.offer,sourceQty:entry.qty,packs:candidate.requiredPacks,cost:candidate.cost,confidence:candidate.confidence}:null;
+  }).filter(Boolean) as Array<{source:Offer;offer:Offer;sourceQty:number;packs:number;cost:number;confidence:number}>;
+  const mixedTotal=mixedPicks.reduce((sum,x)=>sum+x.cost,0);
 
   const oneStoreOptions=storeOrder.map(store=>{
     const picks=entries.map(entry=>{
-      const offer=alternatives(entry.offer,entry.qty,store)[0];
-      return offer?{source:entry.offer,offer,qty:entry.qty}:null;
-    }).filter(Boolean) as Array<{source:Offer;offer:Offer;qty:number}>;
-    return {store,picks,total:picks.reduce((sum,x)=>sum+unitPriceForQuantity(x.offer,x.qty)*x.qty,0),complete:picks.length===entries.length};
+      const candidate=rankedCandidates(entry.offer,entry.qty,store)[0];
+      return candidate?{source:entry.offer,offer:candidate.offer,sourceQty:entry.qty,packs:candidate.requiredPacks,cost:candidate.cost,confidence:candidate.confidence}:null;
+    }).filter(Boolean) as Array<{source:Offer;offer:Offer;sourceQty:number;packs:number;cost:number;confidence:number}>;
+    return {store,picks,total:picks.reduce((sum,x)=>sum+x.cost,0),complete:picks.length===entries.length};
   }).filter(x=>x.complete).sort((a,b)=>a.total-b.total);
   const bestOneStore=oneStoreOptions[0];
 
   const plan=oneStore?(bestOneStore?.picks??[]):mixedPicks;
   const planTotal=oneStore?(bestOneStore?.total??0):mixedTotal;
   const saving=Math.max(0,originalTotal-planTotal);
+  const substitutions=plan.filter(x=>x.source.id!==x.offer.id).length;
+
   const planTotals=storeOrder.map(store=>({
     store,
-    total:plan.filter(x=>x.offer.store===store).reduce((sum,x)=>sum+unitPriceForQuantity(x.offer,x.qty)*x.qty,0),
-    count:plan.filter(x=>x.offer.store===store).reduce((sum,x)=>sum+x.qty,0)
+    total:plan.filter(x=>x.offer.store===store).reduce((sum,x)=>sum+x.cost,0),
+    count:plan.filter(x=>x.offer.store===store).reduce((sum,x)=>sum+x.packs,0)
   })).filter(x=>x.count>0);
 
   const q=norm(addQuery);
@@ -469,26 +513,32 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
       <div className="list-layout">
         <div className="shopping-items">
           {entries.length===0&&<div className="list-empty"><ShoppingCart size={28}/><b>A listád még üres</b><small>Adj hozzá aktuális ajánlatot a + gombbal.</small></div>}
-          {entries.map(({offer:o,qty})=>{const currentUnit=unitPriceForQuantity(o,qty);const best=alternatives(o,qty)[0]; const bestUnit=best?unitPriceForQuantity(best,qty):undefined; const cheaper=best&&bestUnit!==undefined&&bestUnit<currentUnit?best:null; return <div className="shopping-item selected-item" key={o.id}>
-            <button className="remove-list-item" onClick={()=>removeItem(o.id)}><X size={14}/></button>
-            <div className="mini-food"><Image src={o.image} alt="" fill sizes="44px"/></div>
-            <div><strong>{o.name}</strong><small>{o.unitLabel}{cheaper?' · máshol '+money(unitPriceForQuantity(cheaper,qty)):''}</small>{o.loyaltyOnly&&!automaticPromoUsable(o)&&<em className="basket-condition">{/digitális kupon/i.test(o.conditionText||'')?'Kupon nincs automatikusan beleszámolva':'Kártya nélkül normál árral számolva'}</em>}<div className="qty-control"><button onClick={()=>changeQty(o.id,-1)} aria-label="Mennyiség csökkentése">−</button><span>{qty}</span><button onClick={()=>changeQty(o.id,1)} aria-label="Mennyiség növelése">+</button></div></div>
-            <div className="item-price"><b>{money(currentUnit*qty)}</b><small>{o.minQuantity&&qty<o.minQuantity&&o.oldPrice?'Akció '+o.minQuantity+' db-tól':qty>1?qty+' × '+money(currentUnit):''}</small><StoreBadge store={o.store} compact/></div><span className="drag">≡</span>
-          </div>})}
+          {entries.map(({offer:o,qty})=>{
+            const current=unitPackPrice(o,qty)*qty;
+            const best=rankedCandidates(o,qty)[0];
+            const cheaper=best&&best.cost<current&&best.offer.id!==o.id?best:null;
+            return <div className="shopping-item selected-item" key={o.id}>
+              <button className="remove-list-item" onClick={()=>removeItem(o.id)}><X size={14}/></button>
+              <div className="mini-food"><Image src={o.image} alt="" fill sizes="44px"/></div>
+              <div><strong>{o.name}</strong><small>{o.unitLabel}{cheaper?' · jobb kosártalálat: '+stores[cheaper.offer.store].name:''}</small>{o.loyaltyOnly&&!automaticPromoUsable(o)&&<em className="basket-condition">{/digitális kupon/i.test(o.conditionText||'')?'Kupon nincs automatikusan beleszámolva':'Kártya nélkül normál árral számolva'}</em>}<div className="qty-control"><button onClick={()=>changeQty(o.id,-1)} aria-label="Mennyiség csökkentése">−</button><span>{qty}</span><button onClick={()=>changeQty(o.id,1)} aria-label="Mennyiség növelése">+</button></div></div>
+              <div className="item-price"><b>{money(current)}</b><small>{o.minQuantity&&qty<o.minQuantity&&o.oldPrice?'Akció '+o.minQuantity+' db-tól':qty>1?qty+' × '+money(unitPackPrice(o,qty)):''}</small><StoreBadge store={o.store} compact/></div><span className="drag">≡</span>
+            </div>;
+          })}
           <button className="add-product" onClick={()=>setAddOpen(v=>!v)}><Plus size={18}/> Termék hozzáadása</button>
         </div>
 
         <div className="optimizer-card">
           <span className="trophy">{oneStore?'🏪':'✨'}</span>
-          <small>{oneStore?'Legjobb egyboltos kosár':'Legolcsóbb kombináció'}</small>
+          <small>{oneStore?'Legjobb egyboltos kosár':'Legolcsóbb megbízható kombináció'}</small>
           <strong>{entries.length&&plan.length?money(planTotal):'—'}</strong>
-          <p>{entries.length?entries.length+' féle termék · '+entries.reduce((sum,x)=>sum+x.qty,0)+' db':'Adj hozzá termékeket'}</p>
+          <p>{entries.length?entries.length+' féle termék · '+entries.reduce((sum,x)=>sum+x.qty,0)+' kiválasztott csomag':'Adj hozzá termékeket'}</p>
           {saving>0&&<div className="optimizer-saving">−{money(saving)}</div>}
-          <p className="optimizer-card-note"><CreditCard size={12}/> A kártyás árakhoz az adott kártyának a Kártyák között kell lennie. Digitális kupont nem feltételezünk automatikusan aktiváltnak.</p>
+          {substitutions>0&&<div className="optimizer-substitution">{substitutions} tételnél összevethető másik kiszerelést/terméket választ</div>}
+          <p className="optimizer-card-note"><CreditCard size={12}/> Csak erős név-, kategória- és kiszerelés-egyezésnél helyettesítünk. Különböző kiszerelésnél a szükséges csomagszámot is átszámoljuk.</p>
           <hr/>
-          {oneStore&&!bestOneStore&&entries.length>0?<p className="optimizer-warning">A jelenlegi akciós adatok alapján nincs olyan üzlet, ahol minden kiválasztott tételhez azonos kiszerelésű, összevethető ajánlatot találtunk.</p>:<>
+          {oneStore&&!bestOneStore&&entries.length>0?<p className="optimizer-warning">A jelenlegi adatok alapján nincs olyan egyetlen üzlet, ahol minden tételhez elég biztosan összevethető ajánlatot találtunk.</p>:<>
             <b>{oneStore?'Egy üzlet':'Boltonként'}</b>
-            {planTotals.map(x=><div className="store-total" key={x.store}><StoreBadge store={x.store} compact/><span>{x.count} db · {money(x.total)}</span></div>)}
+            {planTotals.map(x=><div className="store-total" key={x.store}><StoreBadge store={x.store} compact/><span>{x.count} csomag · {money(x.total)}</span></div>)}
           </>}
         </div>
       </div>
@@ -497,6 +547,7 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
     </div>
   );
 }
+
 
 function CardsView({ cards, setCards, onAdd, onOpen }: { cards: LoyaltyCard[]; setCards: Dispatch<SetStateAction<LoyaltyCard[]>>; onAdd:()=>void; onOpen:(c:LoyaltyCard)=>void }) {
   return (

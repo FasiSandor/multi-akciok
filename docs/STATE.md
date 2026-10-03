@@ -51,3 +51,12 @@ A manuálisan felvett üzlet biztonsági okból gyorslink. Tetszőleges felhaszn
 ## Árértékelés
 
 A „Tényleg jó akció?” értékelés csak legalább 3 külön napi árpont után ad minősítést. Addig az app jelzi, hogy az árhistorika még épül.
+
+
+## Kedvencek és figyelések – 2026-10-03
+
+A külön kedvenc- és figyelőrendszer helyett egy közös logika marad:
+- a szívvel mentett termék/márka kedvenc és egyben napi figyelés
+- a kezdőlapon külön „Kedvenceid” blokk mutatja az aktuális legjobb találatokat
+- a kedvenc találat egy érintéssel hozzáadható a bevásárlólistához
+- ugyanaz a mentett kifejezés hajtja a Web Push „új / olcsóbb lett” értesítést, így nincs dupla állapot vagy dupla háttérfolyamat

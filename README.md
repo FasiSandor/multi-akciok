@@ -16,7 +16,7 @@ Mobil-first magyar akciókereső, ár-összehasonlító és digitális hűségk�
 - kamera vagy screenshot alapú QR/vonalkód beolvasás, ahol a böngésző BarcodeDetector API-ja elérhető
 - kézi kódmegadás és Saját üzlet opció bármilyen további kártyához
 - pénztári, teljes képernyős QR/vonalkód megjelenítés
-- Figyelőközpont tartós új/olcsóbb állapottal, elolvasás/eltüntetés/törlés kezeléssel
+- egységes Kedvencek + Figyelőközpont: a szívvel mentett termék/márka napi legjobb ajánlatát követi, tartós új/olcsóbb állapottal, gyors „Listára” művelettel és elolvasás/eltüntetés/törlés kezeléssel
 - opcionális háttér Web Push telepített PWA-ban, a napi Supabase frissítéshez kötve
 - helyi JSON adatmentés/visszaállítás a kártyákhoz, listához, figyelésekhez és saját üzletekhez
 - PWA manifest + service worker

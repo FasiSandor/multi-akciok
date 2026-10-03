@@ -250,6 +250,11 @@ export default function Page() {
     setWatchTerms(prev=>prev.filter(x=>!sameWatchTerm(x,term)));
   }
 
+  function addOfferToList(offer:Offer) {
+    setListIds(prev=>prev.includes(offer.id)?prev:[...prev,offer.id]);
+    setListQuantities(prev=>({...prev,[offer.id]:Math.max(1,Number(prev[offer.id])||1)}));
+  }
+
   function exportBackup() {
     const payload={
       app:'MULTI AKCIÓK',
@@ -290,7 +295,7 @@ export default function Page() {
         {selected ? (
           <OfferDetail offer={selected} allOffers={offers} watched={watchTerms.some(x=>sameWatchTerm(x,selected.name))} onWatch={()=>addWatchTerm(selected.name)} onBack={() => setSelected(null)} />
         ) : tab === 'home' ? (
-          <HomeView offers={filtered} campaigns={campaigns} query={query} setQuery={setQuery} onSelect={setSelected} onWatch={addWatchTerm} watchedTerms={watchTerms} setTab={setTab} refresh={() => refreshOffers()} refreshing={refreshing} lastRefresh={lastRefresh} customRetailers={customRetailers} watchHits={watchHits} usingCachedOffers={usingCachedOffers} onOpenWatch={openWatchHit} onDismissWatch={dismissHit} onAddRetailer={() => setRetailerModal(true)} />
+          <HomeView offers={filtered} campaigns={campaigns} query={query} setQuery={setQuery} onSelect={setSelected} onWatch={addWatchTerm} watchedTerms={watchTerms} setTab={setTab} refresh={() => refreshOffers()} refreshing={refreshing} lastRefresh={lastRefresh} customRetailers={customRetailers} watchHits={watchHits} usingCachedOffers={usingCachedOffers} onOpenWatch={openWatchHit} onDismissWatch={dismissHit} onAddRetailer={() => setRetailerModal(true)} onAddToList={addOfferToList} />
         ) : tab === 'search' ? (
           <SearchView offers={offers} query={query} setQuery={setQuery} onSelect={setSelected} />
         ) : tab === 'list' ? (
@@ -298,7 +303,7 @@ export default function Page() {
         ) : tab === 'cards' ? (
           <CardsView cards={cards} setCards={setCards} onAdd={() => setCardModal(true)} onOpen={setActiveCard} />
         ) : (
-          <ProfileView customRetailers={customRetailers} sourceStates={sourceStates} lastRefresh={lastRefresh} watchTerms={watchTerms} setWatchTerms={setWatchTerms} watchHits={watchHits} onOpenWatch={openWatchHit} onDismissWatch={dismissHit} onRemoveWatch={removeWatchTerm} onExportBackup={exportBackup} onImportBackup={importBackup} onAddRetailer={() => setRetailerModal(true)} onRemoveRetailer={(id) => setCustomRetailers(prev => prev.filter(x => x.id !== id))} />
+          <ProfileView customRetailers={customRetailers} sourceStates={sourceStates} lastRefresh={lastRefresh} watchTerms={watchTerms} setWatchTerms={setWatchTerms} watchHits={watchHits} onOpenWatch={openWatchHit} onDismissWatch={dismissHit} onRemoveWatch={removeWatchTerm} onAddToList={addOfferToList} onExportBackup={exportBackup} onImportBackup={importBackup} onAddRetailer={() => setRetailerModal(true)} onRemoveRetailer={(id) => setCustomRetailers(prev => prev.filter(x => x.id !== id))} />
         )}
         {!selected && <BottomNav tab={tab} setTab={setTab} />}
       </section>
@@ -322,9 +327,9 @@ function BrandHeader({ onBell }: { onBell?: () => void }) {
   );
 }
 
-function HomeView({ offers, campaigns, query, setQuery, onSelect, onWatch, watchedTerms, setTab, refresh, refreshing, lastRefresh, customRetailers, watchHits, usingCachedOffers, onOpenWatch, onDismissWatch, onAddRetailer }: {
+function HomeView({ offers, campaigns, query, setQuery, onSelect, onWatch, watchedTerms, setTab, refresh, refreshing, lastRefresh, customRetailers, watchHits, usingCachedOffers, onOpenWatch, onDismissWatch, onAddRetailer, onAddToList }: {
   offers: Offer[]; campaigns: Campaign[]; query: string; setQuery: (s: string) => void; onSelect: (o: Offer) => void; onWatch: (name:string)=>void; watchedTerms:string[]; setTab: (t: Tab) => void;
-  refresh: () => void; refreshing: boolean; lastRefresh: string; customRetailers: CustomRetailer[]; watchHits: WatchHit[]; usingCachedOffers:boolean; onOpenWatch:(hit:WatchHit)=>void; onDismissWatch:(hit:WatchHit)=>void; onAddRetailer: () => void;
+  refresh: () => void; refreshing: boolean; lastRefresh: string; customRetailers: CustomRetailer[]; watchHits: WatchHit[]; usingCachedOffers:boolean; onOpenWatch:(hit:WatchHit)=>void; onDismissWatch:(hit:WatchHit)=>void; onAddRetailer: () => void; onAddToList:(offer:Offer)=>void;
 }) {
   const top = [...offers].sort((a,b)=>discount(b)-discount(a) || a.price-b.price).slice(0, 3);
   const categories = [
@@ -345,6 +350,18 @@ function HomeView({ offers, campaigns, query, setQuery, onSelect, onWatch, watch
       <div className="offer-grid">
         {top.map(o => <OfferCard key={o.id} offer={o} watched={watchedTerms.some(x=>sameWatchTerm(x,o.name))} onWatch={()=>onWatch(o.name)} onClick={() => onSelect(o)} />)}
       </div>
+      {watchHits.length>0&&<>
+        <div className="section-title favorite-title"><h2>Kedvenceid</h2><button onClick={()=>setTab('profile')}>Kezelés <ChevronRight size={16}/></button></div>
+        <div className="favorites-row">
+          {watchHits.slice(0,5).map(hit=><div className="favorite-mini-card" key={hit.term}>
+            <button className="favorite-main" onClick={()=>onOpenWatch(hit)}>
+              <div className="favorite-image"><Image src={hit.offer.image} alt="" fill sizes="56px"/></div>
+              <div><small>{hit.term}</small><strong>{hit.offer.name}</strong><span>{stores[hit.offer.store].name} · {money(hit.offer.price)}</span></div>
+            </button>
+            <button className="favorite-add" onClick={()=>onAddToList(hit.offer)}><Plus size={15}/> Listára</button>
+          </div>)}
+        </div>
+      </>}
       <div className="fresh-banner">
         <div><span>FRISS</span><strong>Élelmiszer, otthon, sport és barkács akciók egy helyen</strong><button onClick={() => setTab('search')}>Megnézem <ChevronRight size={15}/></button></div>
         <div className="banner-food">🛒🏠🏃</div>
@@ -958,7 +975,7 @@ function FullCard({ card, onClose }: { card:LoyaltyCard; onClose:()=>void }) {
   return <div className="full-card-screen"><div className="full-card-top"><button className="icon-btn" onClick={onClose}><X/></button><span>Pénztári nézet</span></div><div className="full-card-brand" style={{background:v.color,color:v.text}}><CardBadge card={card}/><h1>{card.label}</h1>{card.store==='custom'&&<small>{v.name}</small>}<p>{card.code}</p></div><div className="full-code"><CodeDisplay value={card.code} format={card.format} large/></div><p className="brightness-note">☀️ A képernyőt tartsd a leolvasó elé.</p></div>
 }
 
-function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWatchTerms,watchHits,onOpenWatch,onDismissWatch,onRemoveWatch,onExportBackup,onImportBackup,onAddRetailer,onRemoveRetailer}:{customRetailers:CustomRetailer[];sourceStates:SourceState[];lastRefresh:string;watchTerms:string[];setWatchTerms:Dispatch<SetStateAction<string[]>>;watchHits:WatchHit[];onOpenWatch:(hit:WatchHit)=>void;onDismissWatch:(hit:WatchHit)=>void;onRemoveWatch:(term:string)=>void;onExportBackup:()=>void;onImportBackup:(file:File)=>Promise<void>;onAddRetailer:()=>void;onRemoveRetailer:(id:string)=>void}){
+function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWatchTerms,watchHits,onOpenWatch,onDismissWatch,onRemoveWatch,onAddToList,onExportBackup,onImportBackup,onAddRetailer,onRemoveRetailer}:{customRetailers:CustomRetailer[];sourceStates:SourceState[];lastRefresh:string;watchTerms:string[];setWatchTerms:Dispatch<SetStateAction<string[]>>;watchHits:WatchHit[];onOpenWatch:(hit:WatchHit)=>void;onDismissWatch:(hit:WatchHit)=>void;onRemoveWatch:(term:string)=>void;onAddToList:(offer:Offer)=>void;onExportBackup:()=>void;onImportBackup:(file:File)=>Promise<void>;onAddRetailer:()=>void;onRemoveRetailer:(id:string)=>void}){
   const [watchInput,setWatchInput]=useState('');
   const [watchMode,setWatchMode]=useState<'new'|'all'>('new');
   const [backupMessage,setBackupMessage]=useState('');
@@ -1012,11 +1029,11 @@ function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWat
     </div>
 
     <div className="watch-panel" id="watch-panel">
-      <div className="section-title"><h2>Figyelőközpont</h2><small>{watchTerms.length} figyelés · {newCount} új</small></div>
+      <div className="section-title"><h2>Kedvencek és figyelések</h2><small>{watchTerms.length} mentett · {newCount} új</small></div>
       <div className="watch-input"><input value={watchInput} onChange={e=>setWatchInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addWatch()}} placeholder="pl. vaj, lazac, futócipő"/><button onClick={addWatch}><Plus size={17}/></button></div>
       <div className="watch-tabs"><button className={watchMode==='new'?'active':''} onClick={()=>setWatchMode('new')}>Új {newCount>0&&<span>{newCount}</span>}</button><button className={watchMode==='all'?'active':''} onClick={()=>setWatchMode('all')}>Összes</button></div>
 
-      {watchTerms.length===0?<p className="watch-empty">Adj hozzá terméket vagy márkát. A figyelő minden napi frissítéskor megkeresi a legjobb aktuális ajánlatot.</p>:<>
+      {watchTerms.length===0?<p className="watch-empty">Ments el terméket vagy márkát a szívvel, vagy add hozzá itt. A rendszer minden napi frissítéskor megkeresi hozzá a legjobb aktuális ajánlatot.</p>:<>
         {visibleHits.length===0&&<div className="watch-empty-state"><CheckCircle2 size={25}/><b>Nincs új figyelt ajánlat</b><small>Az összes figyelésedet az „Összes” fülön látod.</small></div>}
         <div className="watch-center-list">{visibleHits.map(hit=><div className={'watch-center-card '+(hit.attention?'unread':'')} key={hit.term}>
           <button className="watch-center-main" onClick={()=>onOpenWatch(hit)}>
@@ -1024,7 +1041,7 @@ function ProfileView({customRetailers,sourceStates,lastRefresh,watchTerms,setWat
             <div><div className="watch-center-title"><b>{hit.term}</b>{hit.attention&&<span>ÚJ</span>}</div><strong>{hit.offer.name}</strong><small>{stores[hit.offer.store].name} · {hit.status==='lower'&&hit.previousBest?money(hit.previousBest)+' → ':''}{money(hit.offer.price)}</small><em>{new Date(hit.checkedAt).toLocaleString('hu-HU',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</em></div>
             <ChevronRight size={17}/>
           </button>
-          <div className="watch-center-actions"><button onClick={()=>onDismissWatch(hit)}>Eltüntetés</button><button className="danger-link" onClick={()=>onRemoveWatch(hit.term)}><Trash2 size={13}/> Figyelés törlése</button></div>
+          <div className="watch-center-actions"><button className="watch-list-add" onClick={()=>onAddToList(hit.offer)}><Plus size={13}/> Listára</button><button onClick={()=>onDismissWatch(hit)}>Eltüntetés</button><button className="danger-link" onClick={()=>onRemoveWatch(hit.term)}><Trash2 size={13}/> Törlés</button></div>
         </div>)}</div>
         <div className="watch-no-hit">{watchTerms.filter(term=>!watchHits.some(hit=>sameWatchTerm(hit.term,term))).map(term=><div key={term}><div><b>{term}</b><small>Jelenleg nincs találat</small></div><button onClick={()=>onRemoveWatch(term)}><Trash2 size={14}/></button></div>)}</div>
       </>}

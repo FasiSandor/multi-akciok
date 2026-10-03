@@ -54,3 +54,19 @@
 .store-limit-control{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 10px;padding:8px 9px;border:1px solid var(--line);border-radius:13px;background:#fff}.store-limit-control>span{font-size:9px;font-weight:800;color:#65758a}.store-limit-control>div{display:flex;gap:3px;background:#f0f3f7;border-radius:9px;padding:2px}.store-limit-control button{width:31px;height:27px;border:0;border-radius:7px;background:transparent;color:#6d7b8e;font-size:9px;font-weight:900}.store-limit-control button.active{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(11,37,69,.12)}
 
 .allowed-stores-panel{margin:-2px 0 12px;padding:9px;border:1px solid var(--line);border-radius:13px;background:#fbfcfe}.allowed-stores-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}.allowed-stores-head>span{font-size:9px;font-weight:800;color:#66758a}.allowed-stores-head>button{border:0;background:transparent;color:#0b438d;font-size:8px;font-weight:900}.allowed-store-chips{display:flex;gap:5px;overflow-x:auto;padding-bottom:3px;scrollbar-width:none}.allowed-store-chips::-webkit-scrollbar{display:none}.allowed-store-chips>button{flex:0 0 auto;display:flex;align-items:center;gap:4px;border:1px solid #e0e6ee;background:#fff;border-radius:10px;padding:5px 6px;opacity:.38}.allowed-store-chips>button.active{opacity:1;border-color:#c6d8ee;background:#f5f9ff}.allowed-store-chips>button>span:last-child{font-size:8px;font-weight:800;color:#536176;max-width:78px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.allowed-stores-panel>small{display:block;margin-top:5px;font-size:8px;color:#8995a5}
+
+
+/* Kedvencek + gyors listára csomag */
+.favorite-title{margin-top:22px}
+.favorites-row{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none}
+.favorites-row::-webkit-scrollbar{display:none}
+.favorite-mini-card{min-width:255px;max-width:290px;flex:0 0 78%;background:#fff;border:1px solid #e7edf4;border-radius:18px;padding:10px;box-shadow:0 8px 24px rgba(11,37,69,.06)}
+.favorite-main{width:100%;display:flex;gap:10px;align-items:center;text-align:left;background:none;border:0;padding:0;color:inherit}
+.favorite-image{position:relative;width:58px;height:58px;flex:0 0 58px;border-radius:14px;overflow:hidden;background:#f6f8fb}
+.favorite-image img{object-fit:contain;padding:4px}
+.favorite-main>div:last-child{min-width:0;display:flex;flex-direction:column;gap:2px}
+.favorite-main small{font-size:11px;color:#ef3946;font-weight:800}
+.favorite-main strong{font-size:13px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.favorite-main span{font-size:11px;color:#6b7280}
+.favorite-add{margin-top:9px;width:100%;display:flex;align-items:center;justify-content:center;gap:5px;border:0;border-radius:11px;background:#eff6ff;color:#0b2545;font-weight:800;padding:8px}
+.watch-center-actions .watch-list-add{color:#0b2545;background:#eef5ff}

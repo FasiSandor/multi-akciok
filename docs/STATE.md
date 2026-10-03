@@ -60,3 +60,10 @@ A külön kedvenc- és figyelőrendszer helyett egy közös logika marad:
 - a kezdőlapon külön „Kedvenceid” blokk mutatja az aktuális legjobb találatokat
 - a kedvenc találat egy érintéssel hozzáadható a bevásárlólistához
 - ugyanaz a mentett kifejezés hajtja a Web Push „új / olcsóbb lett” értesítést, így nincs dupla állapot vagy dupla háttérfolyamat
+
+
+## ALDI + Decathlon forráskeményítés – 2026-10-03
+
+- ALDI: elsődleges Supabase RPC mellett közvetlen hivatalos ALDI oldal tartalék forrásként működik.
+- Decathlon: a renderelt product-card parser mellett szöveges „Jelenlegi ár / Korábbi ár” tartalék parser is működik.
+- Cél: egy forrás/proxy vagy kisebb DOM-változás ne nullázza le az adott kereskedő ajánlatait.

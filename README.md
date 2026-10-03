@@ -4,7 +4,7 @@ Mobil-first magyar akciókereső, ár-összehasonlító és digitális hűségk�
 
 ## V1 funkciók
 
-- napi nyilvános forrásellenőrzés: ALDI, Lidl, PENNY, Tesco, SPAR, Auchan, IKEA, Decathlon, OBI, Praktiker, Deichmann, JYSK, Rossmann, Euronics, Gyöngy Patikák, Alma · Újvárosi Patika és Kamilla Patika · Mezőtúr
+- napi nyilvános forrásellenőrzés: ALDI, Lidl, PENNY, Tesco, SPAR, Auchan, IKEA, Decathlon, OBI, Praktiker, Deichmann, JYSK, Rossmann, Euronics, Gyöngy Patikák, Alma · Újvárosi Patika és Kamilla Patika · Mezőtúr; az ALDI és Decathlon kettős, tartalék parserrel védett
 - további saját üzlet felvitele ellenőrzött gyorslinkként névvel, URL-lel, színnel és megjegyzéssel
 - termékkártyák képpel, akciós árral, régi árral és egységárral
 - keresés és bolti szűrés

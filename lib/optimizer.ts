@@ -29,24 +29,34 @@ function tokens(value:string){
 }
 
 export function packInfo(offer:Offer):PackInfo{
-  const text=normalizeProduct(`${offer.unitLabel} ${offer.name}`);
-  const mass=text.match(/(?:^| )(\d+(?:[.,]\d+)?)\s*(kg|g)(?: |$)/i);
+  const raw=(offer.unitLabel+' '+offer.name)
+    .toLocaleLowerCase('hu')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/,/g,'.')
+    .replace(/\s+/g,' ')
+    .trim();
+
+  const mass=raw.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(kg|g)(?:\b|\/)/i);
   if(mass){
-    const n=Number(mass[1].replace(',','.'));
-    return {kind:'mass',amount:mass[2].toLowerCase()==='kg'?n*1000:n};
+    const n=Number(mass[1]);
+    if(Number.isFinite(n)&&n>0) return {kind:'mass',amount:mass[2].toLowerCase()==='kg'?n*1000:n};
   }
-  const volume=text.match(/(?:^| )(\d+(?:[.,]\d+)?)\s*(l|ml)(?: |$)/i);
+
+  const volume=raw.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(l|ml)(?:\b|\/)/i);
   if(volume){
-    const n=Number(volume[1].replace(',','.'));
-    return {kind:'volume',amount:volume[2].toLowerCase()==='l'?n*1000:n};
+    const n=Number(volume[1]);
+    if(Number.isFinite(n)&&n>0) return {kind:'volume',amount:volume[2].toLowerCase()==='l'?n*1000:n};
   }
-  const count=text.match(/(?:^| )(\d+(?:[.,]\d+)?)\s*(db|darab|par)(?: |$)/i);
+
+  const count=raw.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(db|darab|par)(?:\b|\/)/i);
   if(count){
-    const n=Number(count[1].replace(',','.'));
-    return {kind:'count',amount:n};
+    const n=Number(count[1]);
+    if(Number.isFinite(n)&&n>0) return {kind:'count',amount:n};
   }
-  if(/\/\s*kg\b/i.test(offer.name)||normalizeProduct(offer.unitLabel)==='1 kg') return {kind:'mass',amount:1000};
-  if(/\/\s*l\b/i.test(offer.name)||normalizeProduct(offer.unitLabel)==='1 l') return {kind:'volume',amount:1000};
+
+  if(/\/\s*kg\b/i.test(raw)||normalizeProduct(offer.unitLabel)==='1 kg') return {kind:'mass',amount:1000};
+  if(/\/\s*l\b/i.test(raw)||normalizeProduct(offer.unitLabel)==='1 l') return {kind:'volume',amount:1000};
   return {kind:'unknown',amount:1};
 }
 

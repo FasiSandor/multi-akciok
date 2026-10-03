@@ -15,7 +15,7 @@ import { recordOfferHistory, readOfferHistoryStats, type HistoryStats, type Pric
 import { evaluateWatchTerms, type WatchHit } from '@/lib/client-watch';
 import { assessDeal } from '@/lib/deal-quality';
 import { equivalentCandidates } from '@/lib/optimizer';
-import { rankOffers } from '@/lib/search';
+import { normalizeSearch, rankOffers } from '@/lib/search';
 
 type Tab = 'home' | 'search' | 'list' | 'cards' | 'profile';
 type SourceState = { id:string; name:string; url:string; ok:boolean; checkedAt:string; count:number; note?:string };
@@ -297,7 +297,7 @@ function OfferCard({ offer, onClick, onWatch, watched }: { offer: Offer; onClick
 
 function SearchView({ offers, query, setQuery, onSelect }: { offers: Offer[]; query: string; setQuery: (s: string) => void; onSelect: (o: Offer) => void }) {
   const [storeFilter,setStoreFilter]=useState<StoreId | null>(null);
-  const queryStore=storeOrder.find(s=>rankOffers([{...offers.find(o=>o.store===s)??offers[0],store:s} as Offer],query).length>0 && stores[s].name.toLocaleLowerCase('hu')===query.trim().toLocaleLowerCase('hu'))??null;
+  const queryStore=storeOrder.find(s=>normalizeSearch(stores[s].name)===normalizeSearch(query))??null;
   const effectiveStore=storeFilter??queryStore;
   const textQuery=queryStore?'':query;
   const base=effectiveStore?offers.filter(o=>o.store===effectiveStore):offers;

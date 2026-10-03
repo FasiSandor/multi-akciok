@@ -117,6 +117,7 @@ export default function Page() {
   const [watchHits, setWatchHits] = useState<WatchHit[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [storageReady, setStorageReady] = useState(false);
+  const [usingCachedOffers,setUsingCachedOffers]=useState(false);
 
   useEffect(() => {
     const initialCards = readLocalArray<LoyaltyCard>('multi-akciok-cards');
@@ -124,6 +125,16 @@ export default function Page() {
     const initialRetailers = readLocalArray<CustomRetailer>('multi-akciok-custom-retailers');
     const initialQuantities = readLocalRecord<number>('multi-akciok-list-qty');
     const initialWatchTerms = readLocalArray<string>('multi-akciok-watch-terms');
+    try {
+      const cached=JSON.parse(localStorage.getItem('multi-akciok-offers-cache-v1')||'null') as {offers?:Offer[];sourceStates?:SourceState[];campaigns?:Campaign[];refreshedAt?:string}|null;
+      if(cached?.offers?.length){
+        setOffers(cached.offers);
+        if(Array.isArray(cached.sourceStates)) setSourceStates(cached.sourceStates);
+        if(Array.isArray(cached.campaigns)) setCampaigns(cached.campaigns);
+        if(cached.refreshedAt) setLastRefresh(cached.refreshedAt);
+        setUsingCachedOffers(true);
+      }
+    } catch {}
     setCards(initialCards);
     setListIds(initialList);
     setListQuantities(initialQuantities);
@@ -192,7 +203,17 @@ export default function Page() {
         }
         if (Array.isArray(data.sourceStates)) setSourceStates(data.sourceStates);
         if (Array.isArray(data.campaigns)) setCampaigns(data.campaigns);
-        setLastRefresh(data.refreshedAt || new Date().toISOString());
+        const refreshedAt=data.refreshedAt || new Date().toISOString();
+        setLastRefresh(refreshedAt);
+        setUsingCachedOffers(false);
+        if(Array.isArray(data.offers)&&data.offers.length){
+          localStorage.setItem('multi-akciok-offers-cache-v1',JSON.stringify({
+            offers:data.offers,
+            sourceStates:Array.isArray(data.sourceStates)?data.sourceStates:[],
+            campaigns:Array.isArray(data.campaigns)?data.campaigns:[],
+            refreshedAt
+          }));
+        }
       }
     } catch {
       setLastRefresh(new Date().toISOString());
@@ -268,7 +289,7 @@ export default function Page() {
         {selected ? (
           <OfferDetail offer={selected} allOffers={offers} watched={watchTerms.some(x=>sameWatchTerm(x,selected.name))} onWatch={()=>addWatchTerm(selected.name)} onBack={() => setSelected(null)} />
         ) : tab === 'home' ? (
-          <HomeView offers={filtered} campaigns={campaigns} query={query} setQuery={setQuery} onSelect={setSelected} onWatch={addWatchTerm} watchedTerms={watchTerms} setTab={setTab} refresh={() => refreshOffers()} refreshing={refreshing} lastRefresh={lastRefresh} customRetailers={customRetailers} watchHits={watchHits} onOpenWatch={openWatchHit} onDismissWatch={dismissHit} onAddRetailer={() => setRetailerModal(true)} />
+          <HomeView offers={filtered} campaigns={campaigns} query={query} setQuery={setQuery} onSelect={setSelected} onWatch={addWatchTerm} watchedTerms={watchTerms} setTab={setTab} refresh={() => refreshOffers()} refreshing={refreshing} lastRefresh={lastRefresh} customRetailers={customRetailers} watchHits={watchHits} usingCachedOffers={usingCachedOffers} onOpenWatch={openWatchHit} onDismissWatch={dismissHit} onAddRetailer={() => setRetailerModal(true)} />
         ) : tab === 'search' ? (
           <SearchView offers={offers} query={query} setQuery={setQuery} onSelect={setSelected} />
         ) : tab === 'list' ? (
@@ -300,9 +321,9 @@ function BrandHeader({ onBell }: { onBell?: () => void }) {
   );
 }
 
-function HomeView({ offers, campaigns, query, setQuery, onSelect, onWatch, watchedTerms, setTab, refresh, refreshing, lastRefresh, customRetailers, watchHits, onOpenWatch, onDismissWatch, onAddRetailer }: {
+function HomeView({ offers, campaigns, query, setQuery, onSelect, onWatch, watchedTerms, setTab, refresh, refreshing, lastRefresh, customRetailers, watchHits, usingCachedOffers, onOpenWatch, onDismissWatch, onAddRetailer }: {
   offers: Offer[]; campaigns: Campaign[]; query: string; setQuery: (s: string) => void; onSelect: (o: Offer) => void; onWatch: (name:string)=>void; watchedTerms:string[]; setTab: (t: Tab) => void;
-  refresh: () => void; refreshing: boolean; lastRefresh: string; customRetailers: CustomRetailer[]; watchHits: WatchHit[]; onOpenWatch:(hit:WatchHit)=>void; onDismissWatch:(hit:WatchHit)=>void; onAddRetailer: () => void;
+  refresh: () => void; refreshing: boolean; lastRefresh: string; customRetailers: CustomRetailer[]; watchHits: WatchHit[]; usingCachedOffers:boolean; onOpenWatch:(hit:WatchHit)=>void; onDismissWatch:(hit:WatchHit)=>void; onAddRetailer: () => void;
 }) {
   const top = [...offers].sort((a,b)=>discount(b)-discount(a) || a.price-b.price).slice(0, 3);
   const categories = [
@@ -339,7 +360,7 @@ function HomeView({ offers, campaigns, query, setQuery, onSelect, onWatch, watch
       <div className="section-title"><h2>Kategóriák</h2><button onClick={() => setTab('search')}>Összes <ChevronRight size={16}/></button></div>
       <div className="category-row">{categories.map(([e, n]) => <button key={n} onClick={() => { setQuery(n === 'Minden akció' ? '' : n); setTab('search'); }}><span>{e}</span><small>{n}</small></button>)}</div>
       <div className="daily-status">
-        <div><RefreshCw size={16} className={refreshing ? 'spin' : ''}/><span>{lastRefresh ? `Frissítve: ${new Date(lastRefresh).toLocaleString('hu-HU', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}` : 'Napi automatikus frissítés'}</span></div>
+        <div><RefreshCw size={16} className={refreshing ? 'spin' : ''}/><span>{lastRefresh ? (usingCachedOffers?'Mentett adatok · ':'Frissítve: ')+new Date(lastRefresh).toLocaleString('hu-HU',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : 'Napi automatikus frissítés'}</span></div>
         <button onClick={refresh} disabled={refreshing}>Frissítés</button>
       </div>
     </div>

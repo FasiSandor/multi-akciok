@@ -20,6 +20,7 @@ Mobil-first magyar akciókereső, ár-összehasonlító és digitális hűségk�
 - opcionális háttér Web Push telepített PWA-ban, a napi Supabase frissítéshez kötve
 - helyi JSON adatmentés/visszaállítás a kártyákhoz, listához, figyelésekhez és saját üzletekhez
 - PWA manifest + service worker
+- utolsó sikeres ajánlatlista helyi + service-worker gyorsítótárral, gyors újranyitáshoz és gyenge/offline hálózathoz
 - napi Supabase Cron + Edge Function ármentés, Vercel Cron nélkül
 
 ## Adatforrás-stratégia

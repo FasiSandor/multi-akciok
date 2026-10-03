@@ -89,13 +89,14 @@ export function evaluateWatchTerms(offers: Offer[], terms: string[]): WatchHit[]
       checkedAt:now
     });
 
-    state[term]={
+    const nextState:WatchState={
       ...old,
       bestPrice:offer.price,
       offerId:offer.id,
-      checkedAt:now,
-      ...(changedOffer?{dismissedOfferId:undefined}:null)
+      checkedAt:now
     };
+    if(changedOffer) nextState.dismissedOfferId=undefined;
+    state[term]=nextState;
   }
 
   writeState(state);

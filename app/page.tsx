@@ -686,11 +686,9 @@ function ListView({ offers, listIds, setListIds, quantities, setQuantities, card
     return {picks,total:picks.reduce((sum,p)=>sum+p.cost,0),used};
   }
 
-  const effectiveLimit=storeLimit==='all'?'all':Math.min(storeLimit,availableStoreOrder.length) as 1|2|3;
-
   const constrainedPlans=storeLimit==='all'
     ? []
-    : storeCombinations(effectiveLimit)
+    : storeCombinations(Math.max(1,Math.min(storeLimit,availableStoreOrder.length)) as 1|2|3)
         .map(planForStores)
         .filter(Boolean) as Array<{picks:PlanPick[];total:number;used:StoreId[]}>;
 

@@ -7,6 +7,19 @@ function validUuid(value:string){
   return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+function validPushEndpoint(value:string){
+  try{
+    const url=new URL(value);
+    if(url.protocol!=='https:') return false;
+    const host=url.hostname.toLowerCase();
+    return host==='fcm.googleapis.com' ||
+      host==='push.apple.com' || host.endsWith('.push.apple.com') ||
+      host==='push.services.mozilla.com' || host.endsWith('.push.services.mozilla.com');
+  }catch{
+    return false;
+  }
+}
+
 export async function POST(request:Request){
   try{
     const body=await request.json();
@@ -16,7 +29,7 @@ export async function POST(request:Request){
       ? body.watchTerms.map((x:unknown)=>String(x).trim()).filter(Boolean).slice(0,30)
       : [];
 
-    if(!validUuid(deviceId)||!endpoint.startsWith('https://')||endpoint.length>3000){
+    if(!validUuid(deviceId)||!validPushEndpoint(endpoint)||endpoint.length>3000){
       return NextResponse.json({ok:false,error:'Érvénytelen push-adat.'},{status:400});
     }
 
